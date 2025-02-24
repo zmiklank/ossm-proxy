@@ -5,23 +5,23 @@ metric:
     value: {{ .Vars.RequestCount }}
   label:
   - name: reporter
-    value: waypoint
+    value: source
   - name: source_workload
     value: productpage-v1
   - name: source_canonical_service
-    value: unknown
+    value: productpage-v1
   - name: source_canonical_revision
-    value: latest
+    value: version-1
   - name: source_workload_namespace
     value: default
   - name: source_principal
-    value: spiffe://cluster.local/ns/default/sa/client
+    value: unknown
   - name: source_app
-    value: unknown
+    value: productpage
   - name: source_version
-    value: unknown
+    value: v1
   - name: source_cluster
-    value: unknown
+    value: client-cluster
   - name: destination_workload
     value: ratings-v1
   - name: destination_workload_namespace
@@ -57,4 +57,4 @@ metric:
   - name: response_flags
     value: "-"
   - name: connection_security_policy
-    value: mutual_tls
+    value: unknown # Because we can't verify the source principal (dumb reason)

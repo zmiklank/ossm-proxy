@@ -1,8 +1,8 @@
-name: istio_requests_total
+name: istio_tcp_connections_opened_total
 type: COUNTER
 metric:
 - counter:
-    value: {{ .Vars.RequestCount }}
+    value: 10
   label:
   - name: reporter
     value: waypoint
@@ -45,15 +45,7 @@ metric:
   - name: destination_cluster
     value: ratings-cluster
   - name: request_protocol
-    {{- if .Vars.GrpcResponseStatus }}
-    value: grpc
-    {{- else }}
-    value: http
-    {{- end }}
-  - name: response_code
-    value: "200"
-  - name: grpc_response_status
-    value: "{{ .Vars.GrpcResponseStatus }}"
+    value: tcp
   - name: response_flags
     value: "-"
   - name: connection_security_policy

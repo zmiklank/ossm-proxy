@@ -38,7 +38,9 @@ func init() {
 		"TestStatsECDS/#00",
 		"TestStatsEndpointLabels/#00",
 		"TestStatsServerWaypointProxy",
-		"TestStatsServerWaypointProxyCONNECT",
+		"TestStatsServerWaypointProxyCONNECT/full_metadata",
+		"TestStatsServerWaypointProxyCONNECT/empty_metadata",
+		"TestTCPStatsServerWaypointProxyCONNECT",
 		"TestStatsGrpc/#00",
 		"TestStatsGrpcStream/#00",
 		"TestStatsParallel/Default",
@@ -55,5 +57,8 @@ func init() {
 		"TestTCPMetadataExchangeWithConnectionTermination",
 		"TestTCPMetadataNotFoundReporting",
 		"TestStatsDestinationServiceNamespacePrecedence",
+		"TestAdditionalLabels",
+		"TestTCPMXAdditionalLabels",
+		"TestStatsClientSidecarCONNECT",
 	}...)
 }
