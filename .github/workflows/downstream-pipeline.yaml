@@ -25,4 +25,4 @@ jobs:
         with:
           api_key: ${{ secrets.TF_API_KEY }}
           pull_request_status_name: "RHEL 9.4, openssl 3.0.7"
-          compose: RHEL-9.4.0
+          compose: "RHEL-9.4.0-Nightly"
