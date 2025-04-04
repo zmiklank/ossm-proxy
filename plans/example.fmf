@@ -1,0 +1,36 @@
+summary: Build and test Envoy Proxy in a container
+
+provision:
+  how: container
+  image: registry.redhat.io/rhel9-4-els/rhel:9.4
+
+prepare:
+  - name: Install dependencies
+    how: shell
+    script: >
+      dnf install -y
+      ninja-build gcc-toolset-12-libatomic-devel golang java-11-openjdk-devel
+      make patch xz automake git wget unzip
+      python3.12 python3.12-devel python3.12-pip python3.12-setuptools platform-python-devel
+      clang clang-devel llvm llvm-devel  libstdc++-devel libstdc++
+      nodejs cmake openssl openssl-devel tzdata-java lld
+
+  - name: install bazel 6.5.0
+    how: shell
+    script: |
+      wget https://releases.bazel.build/6.5.0/release/bazel-6.5.0-installer-linux-x86_64.sh
+      bash bazel-6.5.0-installer-linux-x86_64.sh
+
+  - name: create user user
+    how: shell
+    script: |
+      useradd user
+
+  - name: Clone Envoy repository
+    how: shell
+    script: |
+      git clone https://github.com/openshift-service-mesh/proxy.git /work
+
+
+execute:
+  script: cd /work; ./ossm/ci/pre-submit-envoy.sh

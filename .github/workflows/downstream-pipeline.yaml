@@ -1,0 +1,28 @@
+name: Schedule test on Testing Farm
+on:
+  pull_request
+#  issue_comment:
+#    types:
+#      - created
+
+# The concurrency key is used to prevent multiple workflows from running at the same time
+concurrency:
+  group: my-concurrency-group
+  cancel-in-progress: true
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    # Let's schedule tests only on user request. NOT automatically.
+    # Only repository owner or member can schedule tests
+#    if: |
+#      github.event.issue.pull_request
+#      && contains(github.event.comment.body, '[test]')
+#      && contains(fromJson('["OWNER", "MEMBER"]'), github.event.comment.author_association)
+    steps:
+      - name: Schedule test on Testing Farm
+        uses: sclorg/testing-farm-as-github-action@v3
+        with:
+          api_key: ${{ secrets.TF_API_KEY }}
+          pull_request_status_name: "RHEL 9.4, openssl 3.0.7"
+          compose: RHEL-9.4.0
