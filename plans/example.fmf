@@ -9,10 +9,11 @@ prepare:
     how: shell
     script: >
       dnf -y install wget;
-      wget --no-check-certificate https://gitlab.cee.redhat.com/zmiklank/repo/-/raw/master/rhel/rhel-9-eus.repo?ref_type=heads -O /etc/yum.repos.d/repo.repo
+      wget --no-check-certificate https://gitlab.cee.redhat.com/-/snippets/9666/raw/main/9.4 -O /etc/yum.repos.d/repo.repo
   - name: Install dependencies
     how: shell
     script: >
+      dnf remove -y lld  llvm-libs clang llvm-libs 
       dnf install -y
       ninja-build gcc-toolset-12-libatomic-devel golang java-11-openjdk-devel
       make patch xz automake git wget unzip
