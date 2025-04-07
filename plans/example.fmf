@@ -5,6 +5,11 @@ provision:
   image: registry.redhat.io/rhel9-4-els/rhel:9.4
 
 prepare:
+  - name: Add repo
+    how: shell
+    script: >
+      dnf -y install wget;
+      wget --no-check-certificate https://gitlab.cee.redhat.com/zmiklank/repo/-/raw/master/rhel/rhel-9-eus.repo?ref_type=heads -O /etc/yum.repos.d/repo.repo
   - name: Install dependencies
     how: shell
     script: >
