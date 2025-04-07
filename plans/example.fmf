@@ -12,7 +12,7 @@ prepare:
       ninja-build gcc-toolset-12-libatomic-devel golang java-11-openjdk-devel
       make patch xz automake git wget unzip
       python3.12 python3.12-devel python3.12-pip python3.12-setuptools platform-python-devel
-      clang clang-devel llvm llvm-devel  libstdc++-devel libstdc++
+      clang-14.0.6 clang-devel-14.0.6 llvm-14.0.6 llvm-devel-14.0.6  libstdc++-devel libstdc++
       nodejs cmake openssl openssl-devel tzdata-java lld
 
   - name: install bazel 6.5.0
