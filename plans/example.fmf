@@ -39,4 +39,4 @@ prepare:
 
 
 execute:
-  script: cd /work; ./ossm/ci/pre-submit-envoy.sh
+  script: export LD_LIBRARY_PATH=''; export LLVM_DIR=/usr/lib64/cmake/llvm; cd /work; ./ossm/ci/pre-submit-envoy.sh
