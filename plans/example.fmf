@@ -39,4 +39,10 @@ prepare:
 
 
 execute:
-  script:  cd /work; export ENVOY_STDLIB=libstdc++; ./ossm/ci/pre-submit-envoy.sh
+  script: |
+    cd /work/ossm/vendor/envoy
+    rm WORKSPACE
+    wget https://raw.githubusercontent.com/envoyproxy/envoy-openssl/refs/heads/release/v1.32/WORKSPACE
+    git config --global --add safe.directory /work
+    export CC=clang CXX=clang++
+    bazel build //:envoy
