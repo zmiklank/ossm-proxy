@@ -39,4 +39,4 @@ prepare:
 
 
 execute:
-  script:  cd /work; export ENVOY_STDLIB=libstdc++; ./ossm/ci/pre-submit-envoy-tests.sh
+  script:  cd /work; export ENVOY_STDLIB=libstdc++; ./ossm/ci/pre-submit-envoy.sh
