@@ -36,10 +36,12 @@ prepare:
     how: shell
     script: |
       git clone https://github.com/openshift-service-mesh/proxy.git /work
+      chown -R user /work
 
 
 execute:
   script: |
+    su -l  user
     cd /work/ossm/vendor/envoy
     rm WORKSPACE
     wget https://raw.githubusercontent.com/envoyproxy/envoy-openssl/refs/heads/release/v1.32/WORKSPACE
