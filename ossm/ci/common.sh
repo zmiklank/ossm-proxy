@@ -20,6 +20,11 @@ COMMON_FLAGS="\
     --config=release \
     --config=${ARCH} \
 "
+DEBUG_FLAGS="\
+    --subcommands \
+    --verbose_failures \
+    --sandbox_debug \
+"
 
 if [ -n "${BAZEL_REMOTE_CACHE}" ]; then
   COMMON_FLAGS+=" --remote_cache=${BAZEL_REMOTE_CACHE} "
@@ -41,6 +46,8 @@ if [ -n "${CI}" ]; then
 fi
 
 function bazel_build() {
+  BAZEL_USE_LLVM_NATIVE_TOOLCHAIN=1 \
+  BAZEL_LLVM_CONFIG="/usr/bin/llvm-config-17" \
   bazel build \
     ${COMMON_FLAGS} \
     "${@}" \
