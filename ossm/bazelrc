@@ -23,7 +23,8 @@ build:ci-config --color=no
 build:ci-config --show_progress_rate_limit=10
 
 common --action_env=OPENSSL_ROOT_DIR
-common --action_env=Clang_DIR=/usr/lib/llvm
+common --action_env=Clang_DIR=/usr/lib64/cmake/clang/
+common --action_env=LLVM_DIR=/usr/lib64/cmake/llvm/
 
 # Import vendor flags
 import %workspace%/ossm/bazelrc-vendor
