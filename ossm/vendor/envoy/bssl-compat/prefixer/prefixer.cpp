@@ -406,6 +406,7 @@ class CompilationDatabase : public clang::tooling::CompilationDatabase
           // Some versions of clang ship with the full version string in the include path, others only with the major version number.
           "-I" LLVM_LIBRARY_DIR "/clang/" LLVM_VERSION_STRING "/include/",
           "-I" LLVM_LIBRARY_DIR "/clang/" + std::to_string(LLVM_VERSION_MAJOR) + "/include/",
+          "-I/usr/lib/clang/17/include/",
           file.str()
       };
       return { clang::tooling::CompileCommand(".", file, cmdline, "") };
