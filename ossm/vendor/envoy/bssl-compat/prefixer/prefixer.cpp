@@ -401,7 +401,7 @@ class CompilationDatabase : public clang::tooling::CompilationDatabase
 
     std::vector<clang::tooling::CompileCommand> getCompileCommands(llvm::StringRef file) const override {
       std::vector<std::string> cmdline = {
-          "dummy",
+          "/usr/bin/clang-17",
           std::string("-I") + opt::incdir().string(),
           // Some versions of clang ship with the full version string in the include path, others only with the major version number.
           "-I" LLVM_LIBRARY_DIR "/clang/" LLVM_VERSION_STRING "/include/",
