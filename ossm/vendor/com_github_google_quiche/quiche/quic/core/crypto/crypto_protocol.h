@@ -30,8 +30,14 @@ namespace internal {
 // because of the trailing null byte.
 constexpr QuicTag MakeStaticQuicTag(const char (&input)[5]) {
   constexpr auto u8 = [](char c) { return static_cast<uint8_t>(c); };
+#if defined(__BYTE_ORDER__) && defined(__ORDER_BIG_ENDIAN__) && \
+  __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+  return static_cast<QuicTag>((u8(input[0]) << 24) | (u8(input[1]) << 16) |
+                              (u8(input[2]) << 8) | u8(input[3]));
+#else
   return static_cast<QuicTag>((u8(input[3]) << 24) | (u8(input[2]) << 16) |
                               (u8(input[1]) << 8) | u8(input[0]));
+#endif
 }
 
 // A variant for three-character QUIC tags. Pads the end with null bytes.

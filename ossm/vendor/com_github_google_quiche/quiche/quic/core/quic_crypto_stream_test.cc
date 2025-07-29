@@ -140,8 +140,8 @@ class QuicCryptoStreamTest : public QuicTest {
     session_.SetCryptoStream(stream_);
     session_.Initialize();
     message_.set_tag(kSHLO);
-    message_.SetStringPiece(1, "abc");
-    message_.SetStringPiece(2, "def");
+    message_.SetStringPiece(MakeQuicTag(0x01, 0x00, 0x00, 0x00), "abc");
+    message_.SetStringPiece(MakeQuicTag(0x02, 0x00, 0x00, 0x00), "def");
     ConstructHandshakeMessage();
   }
   QuicCryptoStreamTest(const QuicCryptoStreamTest&) = delete;
@@ -181,8 +181,8 @@ TEST_F(QuicCryptoStreamTest, ProcessRawData) {
   const CryptoHandshakeMessage& message = (*stream_->messages())[0];
   EXPECT_EQ(kSHLO, message.tag());
   EXPECT_EQ(2u, message.tag_value_map().size());
-  EXPECT_EQ("abc", crypto_test_utils::GetValueForTag(message, 1));
-  EXPECT_EQ("def", crypto_test_utils::GetValueForTag(message, 2));
+  EXPECT_EQ("abc", crypto_test_utils::GetValueForTag(message, MakeQuicTag(0x01, 0x00, 0x00, 0x00)));
+  EXPECT_EQ("def", crypto_test_utils::GetValueForTag(message, MakeQuicTag(0x02, 0x00, 0x00, 0x00)));
 }
 
 TEST_F(QuicCryptoStreamTest, ProcessBadData) {

@@ -31,20 +31,20 @@ TEST_F(QuicheEndianTest, Portable) {
 }
 
 TEST_F(QuicheEndianTest, HostToNet) {
-  EXPECT_EQ(k16BitSwappedTestData,
+  EXPECT_EQ(quiche::QuicheEndian::HostEndianness == quiche::BIG ? k16BitTestData : k16BitSwappedTestData,
             quiche::QuicheEndian::HostToNet16(k16BitTestData));
-  EXPECT_EQ(k32BitSwappedTestData,
+  EXPECT_EQ(quiche::QuicheEndian::HostEndianness == quiche::BIG ? k32BitTestData : k32BitSwappedTestData,
             quiche::QuicheEndian::HostToNet32(k32BitTestData));
-  EXPECT_EQ(k64BitSwappedTestData,
+  EXPECT_EQ(quiche::QuicheEndian::HostEndianness == quiche::BIG ? k64BitTestData : k64BitSwappedTestData,
             quiche::QuicheEndian::HostToNet64(k64BitTestData));
 }
 
 TEST_F(QuicheEndianTest, NetToHost) {
-  EXPECT_EQ(k16BitTestData,
+  EXPECT_EQ(quiche::QuicheEndian::HostEndianness == quiche::BIG ? k16BitSwappedTestData : k16BitTestData,
             quiche::QuicheEndian::NetToHost16(k16BitSwappedTestData));
-  EXPECT_EQ(k32BitTestData,
+  EXPECT_EQ(quiche::QuicheEndian::HostEndianness == quiche::BIG ? k32BitSwappedTestData : k32BitTestData,
             quiche::QuicheEndian::NetToHost32(k32BitSwappedTestData));
-  EXPECT_EQ(k64BitTestData,
+  EXPECT_EQ(quiche::QuicheEndian::HostEndianness == quiche::BIG ? k64BitSwappedTestData : k64BitTestData,
             quiche::QuicheEndian::NetToHost64(k64BitSwappedTestData));
 }
 

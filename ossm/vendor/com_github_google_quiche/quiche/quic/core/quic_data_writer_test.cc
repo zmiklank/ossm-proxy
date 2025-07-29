@@ -143,6 +143,9 @@ TEST_P(QuicDataWriterTest, WriteUFloat16) {
     uint16_t result = *reinterpret_cast<uint16_t*>(writer.data());
     if (GetParam().endianness == quiche::NETWORK_BYTE_ORDER) {
       result = quiche::QuicheEndian::HostToNet16(result);
+    } else if (GetParam().endianness == quiche::HOST_BYTE_ORDER
+               && quiche::QuicheEndian::HostEndianness == quiche::BIG) {
+      result = quiche::QuicheEndian::ByteSwap16(result);
     }
     EXPECT_EQ(test_cases[i].encoded, result);
   }
@@ -204,6 +207,9 @@ TEST_P(QuicDataWriterTest, ReadUFloat16) {
     uint16_t encoded_ufloat = test_cases[i].encoded;
     if (GetParam().endianness == quiche::NETWORK_BYTE_ORDER) {
       encoded_ufloat = quiche::QuicheEndian::HostToNet16(encoded_ufloat);
+    } else if (GetParam().endianness == quiche::HOST_BYTE_ORDER
+               && quiche::QuicheEndian::HostEndianness == quiche::BIG) {
+      encoded_ufloat = quiche::QuicheEndian::ByteSwap16(encoded_ufloat);
     }
     QuicDataReader reader(reinterpret_cast<char*>(&encoded_ufloat), 2,
                           GetParam().endianness);
@@ -221,6 +227,9 @@ TEST_P(QuicDataWriterTest, RoundTripUFloat16) {
     uint16_t read_number = i;
     if (GetParam().endianness == quiche::NETWORK_BYTE_ORDER) {
       read_number = quiche::QuicheEndian::HostToNet16(read_number);
+    } else if (GetParam().endianness == quiche::HOST_BYTE_ORDER
+               && quiche::QuicheEndian::HostEndianness == quiche::BIG) {
+      read_number = quiche::QuicheEndian::ByteSwap16(read_number);
     }
     QuicDataReader reader(reinterpret_cast<char*>(&read_number), 2,
                           GetParam().endianness);
@@ -253,6 +262,11 @@ TEST_P(QuicDataWriterTest, RoundTripUFloat16) {
       encoded1 = quiche::QuicheEndian::NetToHost16(encoded1);
       encoded2 = quiche::QuicheEndian::NetToHost16(encoded2);
       encoded3 = quiche::QuicheEndian::NetToHost16(encoded3);
+    } else if (GetParam().endianness == quiche::HOST_BYTE_ORDER
+               && quiche::QuicheEndian::HostEndianness == quiche::BIG) {
+      encoded1 = quiche::QuicheEndian::ByteSwap16(encoded1);
+      encoded2 = quiche::QuicheEndian::ByteSwap16(encoded2);
+      encoded3 = quiche::QuicheEndian::ByteSwap16(encoded3);
     }
     EXPECT_EQ(i - 1, encoded1);
     // Check roundtrip.

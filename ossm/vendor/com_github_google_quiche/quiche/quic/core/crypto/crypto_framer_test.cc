@@ -13,6 +13,7 @@
 #include "quiche/quic/core/crypto/crypto_handshake.h"
 #include "quiche/quic/core/crypto/crypto_protocol.h"
 #include "quiche/quic/core/quic_packets.h"
+#include "quiche/quic/core/quic_tag.h"
 #include "quiche/quic/platform/api/quic_logging.h"
 #include "quiche/quic/platform/api/quic_test.h"
 #include "quiche/quic/test_tools/crypto_test_utils.h"
@@ -46,10 +47,10 @@ class TestCryptoVisitor : public CryptoFramerVisitorInterface {
 
 TEST(CryptoFramerTest, ConstructHandshakeMessage) {
   CryptoHandshakeMessage message;
-  message.set_tag(0xFFAA7733);
-  message.SetStringPiece(0x12345678, "abcdef");
-  message.SetStringPiece(0x12345679, "ghijk");
-  message.SetStringPiece(0x1234567A, "lmnopqr");
+  message.set_tag(MakeQuicTag(0x33, 0x77, 0xAA, 0xFF));
+  message.SetStringPiece(MakeQuicTag(0x78, 0x56, 0x34, 0x12), "abcdef");
+  message.SetStringPiece(MakeQuicTag(0x79, 0x56, 0x34, 0x12), "ghijk");
+  message.SetStringPiece(MakeQuicTag(0x7A, 0x56, 0x34, 0x12), "lmnopqr");
 
   unsigned char packet[] = {// tag
                             0x33, 0x77, 0xAA, 0xFF,
@@ -86,9 +87,9 @@ TEST(CryptoFramerTest, ConstructHandshakeMessage) {
 
 TEST(CryptoFramerTest, ConstructHandshakeMessageWithTwoKeys) {
   CryptoHandshakeMessage message;
-  message.set_tag(0xFFAA7733);
-  message.SetStringPiece(0x12345678, "abcdef");
-  message.SetStringPiece(0x12345679, "ghijk");
+  message.set_tag(MakeQuicTag(0x33, 0x77, 0xAA, 0xFF));
+  message.SetStringPiece(MakeQuicTag(0x78, 0x56, 0x34, 0x12), "abcdef");
+  message.SetStringPiece(MakeQuicTag(0x79, 0x56, 0x34, 0x12), "ghijk");
 
   unsigned char packet[] = {// tag
                             0x33, 0x77, 0xAA, 0xFF,
@@ -120,8 +121,8 @@ TEST(CryptoFramerTest, ConstructHandshakeMessageWithTwoKeys) {
 
 TEST(CryptoFramerTest, ConstructHandshakeMessageZeroLength) {
   CryptoHandshakeMessage message;
-  message.set_tag(0xFFAA7733);
-  message.SetStringPiece(0x12345678, "");
+  message.set_tag(MakeQuicTag(0x33, 0x77, 0xAA, 0xFF));
+  message.SetStringPiece(MakeQuicTag(0x78, 0x56, 0x34, 0x12), "");
 
   unsigned char packet[] = {// tag
                             0x33, 0x77, 0xAA, 0xFF,
@@ -145,7 +146,7 @@ TEST(CryptoFramerTest, ConstructHandshakeMessageZeroLength) {
 
 TEST(CryptoFramerTest, ConstructHandshakeMessageTooManyEntries) {
   CryptoHandshakeMessage message;
-  message.set_tag(0xFFAA7733);
+  message.set_tag(MakeQuicTag(0x33, 0x77, 0xAA, 0xFF));
   for (uint32_t key = 1; key <= kMaxEntries + 1; ++key) {
     message.SetStringPiece(key, "abcdef");
   }
@@ -157,8 +158,8 @@ TEST(CryptoFramerTest, ConstructHandshakeMessageTooManyEntries) {
 
 TEST(CryptoFramerTest, ConstructHandshakeMessageMinimumSize) {
   CryptoHandshakeMessage message;
-  message.set_tag(0xFFAA7733);
-  message.SetStringPiece(0x01020304, "test");
+  message.set_tag(MakeQuicTag(0x33, 0x77, 0xAA, 0xFF));
+  message.SetStringPiece(MakeQuicTag(0x04, 0x03, 0x02, 0x01), "test");
   message.set_minimum_size(64);
 
   unsigned char packet[] = {// tag
@@ -194,8 +195,8 @@ TEST(CryptoFramerTest, ConstructHandshakeMessageMinimumSize) {
 
 TEST(CryptoFramerTest, ConstructHandshakeMessageMinimumSizePadLast) {
   CryptoHandshakeMessage message;
-  message.set_tag(0xFFAA7733);
-  message.SetStringPiece(1, "");
+  message.set_tag(MakeQuicTag(0x33, 0x77, 0xAA, 0xFF));
+  message.SetStringPiece(MakeQuicTag(0x01, 0x00, 0x00, 0x00), "");
   message.set_minimum_size(64);
 
   unsigned char packet[] = {// tag
@@ -257,10 +258,10 @@ TEST(CryptoFramerTest, ProcessInput) {
   EXPECT_EQ(0, visitor.error_count_);
   ASSERT_EQ(1u, visitor.messages_.size());
   const CryptoHandshakeMessage& message = visitor.messages_[0];
-  EXPECT_EQ(0xFFAA7733, message.tag());
+  EXPECT_EQ(MakeQuicTag(0x33, 0x77, 0xAA, 0xFF), message.tag());
   EXPECT_EQ(2u, message.tag_value_map().size());
-  EXPECT_EQ("abcdef", crypto_test_utils::GetValueForTag(message, 0x12345678));
-  EXPECT_EQ("ghijk", crypto_test_utils::GetValueForTag(message, 0x12345679));
+  EXPECT_EQ("abcdef", crypto_test_utils::GetValueForTag(message, MakeQuicTag(0x78, 0x56, 0x34, 0x12)));
+  EXPECT_EQ("ghijk", crypto_test_utils::GetValueForTag(message, MakeQuicTag(0x79, 0x56, 0x34, 0x12)));
 }
 
 TEST(CryptoFramerTest, ProcessInputWithThreeKeys) {
@@ -299,11 +300,11 @@ TEST(CryptoFramerTest, ProcessInputWithThreeKeys) {
   EXPECT_EQ(0, visitor.error_count_);
   ASSERT_EQ(1u, visitor.messages_.size());
   const CryptoHandshakeMessage& message = visitor.messages_[0];
-  EXPECT_EQ(0xFFAA7733, message.tag());
+  EXPECT_EQ(MakeQuicTag(0x33, 0x77, 0xAA, 0xFF), message.tag());
   EXPECT_EQ(3u, message.tag_value_map().size());
-  EXPECT_EQ("abcdef", crypto_test_utils::GetValueForTag(message, 0x12345678));
-  EXPECT_EQ("ghijk", crypto_test_utils::GetValueForTag(message, 0x12345679));
-  EXPECT_EQ("lmnopqr", crypto_test_utils::GetValueForTag(message, 0x1234567A));
+  EXPECT_EQ("abcdef", crypto_test_utils::GetValueForTag(message, MakeQuicTag(0x78, 0x56, 0x34, 0x12)));
+  EXPECT_EQ("ghijk", crypto_test_utils::GetValueForTag(message, MakeQuicTag(0x79, 0x56, 0x34, 0x12)));
+  EXPECT_EQ("lmnopqr", crypto_test_utils::GetValueForTag(message, MakeQuicTag(0x7A, 0x56, 0x34, 0x12)));
 }
 
 TEST(CryptoFramerTest, ProcessInputIncrementally) {
@@ -336,10 +337,10 @@ TEST(CryptoFramerTest, ProcessInputIncrementally) {
   EXPECT_EQ(0u, framer.InputBytesRemaining());
   ASSERT_EQ(1u, visitor.messages_.size());
   const CryptoHandshakeMessage& message = visitor.messages_[0];
-  EXPECT_EQ(0xFFAA7733, message.tag());
+  EXPECT_EQ(MakeQuicTag(0x33, 0x77, 0xAA, 0xFF), message.tag());
   EXPECT_EQ(2u, message.tag_value_map().size());
-  EXPECT_EQ("abcdef", crypto_test_utils::GetValueForTag(message, 0x12345678));
-  EXPECT_EQ("ghijk", crypto_test_utils::GetValueForTag(message, 0x12345679));
+  EXPECT_EQ("abcdef", crypto_test_utils::GetValueForTag(message, MakeQuicTag(0x78, 0x56, 0x34, 0x12)));
+  EXPECT_EQ("ghijk", crypto_test_utils::GetValueForTag(message, MakeQuicTag(0x79, 0x56, 0x34, 0x12)));
 }
 
 TEST(CryptoFramerTest, ProcessInputTagsOutOfOrder) {

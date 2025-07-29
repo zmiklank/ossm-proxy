@@ -47,16 +47,24 @@ TEST(QuicheIpAddressTest, IPv6) {
 
   EXPECT_EQ("fe80::1ff:fe23:4567", ip_address.ToString());
   const in6_addr v6_address = ip_address.GetIPv6();
-  const uint16_t* const v6_address_ptr =
-      reinterpret_cast<const uint16_t*>(&v6_address);
-  EXPECT_EQ(0x80feu, *(v6_address_ptr + 0));
-  EXPECT_EQ(0x0000u, *(v6_address_ptr + 1));
-  EXPECT_EQ(0x0000u, *(v6_address_ptr + 2));
-  EXPECT_EQ(0x0000u, *(v6_address_ptr + 3));
-  EXPECT_EQ(0x0000u, *(v6_address_ptr + 4));
-  EXPECT_EQ(0xff01u, *(v6_address_ptr + 5));
-  EXPECT_EQ(0x23feu, *(v6_address_ptr + 6));
-  EXPECT_EQ(0x6745u, *(v6_address_ptr + 7));
+  const uint8_t* const v6_address_ptr =
+      reinterpret_cast<const uint8_t*>(&v6_address);
+  EXPECT_EQ(0xfeu, *(v6_address_ptr + 0));
+  EXPECT_EQ(0x80u, *(v6_address_ptr + 1));
+  EXPECT_EQ(0x00u, *(v6_address_ptr + 2));
+  EXPECT_EQ(0x00u, *(v6_address_ptr + 3));
+  EXPECT_EQ(0x00u, *(v6_address_ptr + 4));
+  EXPECT_EQ(0x00u, *(v6_address_ptr + 5));
+  EXPECT_EQ(0x00u, *(v6_address_ptr + 6));
+  EXPECT_EQ(0x00u, *(v6_address_ptr + 7));
+  EXPECT_EQ(0x00u, *(v6_address_ptr + 8));
+  EXPECT_EQ(0x00u, *(v6_address_ptr + 9));
+  EXPECT_EQ(0x01u, *(v6_address_ptr + 10));
+  EXPECT_EQ(0xffu, *(v6_address_ptr + 11));
+  EXPECT_EQ(0xfeu, *(v6_address_ptr + 12));
+  EXPECT_EQ(0x23u, *(v6_address_ptr + 13));
+  EXPECT_EQ(0x45u, *(v6_address_ptr + 14));
+  EXPECT_EQ(0x67u, *(v6_address_ptr + 15));
 
   EXPECT_EQ(ip_address, ip_address.Normalized());
   EXPECT_EQ(ip_address, ip_address.DualStacked());
