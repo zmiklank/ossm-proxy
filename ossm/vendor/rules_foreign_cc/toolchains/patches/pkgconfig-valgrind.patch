@@ -1,5 +1,5 @@
 --- glib/glib/valgrind.h
-+++ glib/glib/valgrind.h
++++ glib/glib/valgrind.h.new
 @@ -643,7 +643,7 @@
                      /* results = r3 */                           \
                      "lgr %0, 3\n\t"                              \
