@@ -1,0 +1,18 @@
+commit 89e52c47bc72bfab61d1e1e28bb89540c58ccd8b
+Author: Jonh Wendell <jwendell@redhat.com>
+Date:   Fri Sep 5 16:15:03 2025 -0400
+
+    Adjust some v8 flags to make the build pass
+
+diff --git a/ossm/vendor/v8/bazel/defs.bzl b/ossm/vendor/v8/bazel/defs.bzl
+index b51e189d7..7d4ba77f8 100644
+--- a/ossm/vendor/v8/bazel/defs.bzl
++++ b/ossm/vendor/v8/bazel/defs.bzl
+@@ -117,6 +117,7 @@ def _default_args():
+                 "-Wno-implicit-int-float-conversion",
+                 "-Wno-deprecated-copy",
+                 "-Wno-non-virtual-dtor",
++                "-Wno-deprecated-declarations",
+                 "-isystem .",
+             ],
+             "//conditions:default": [],

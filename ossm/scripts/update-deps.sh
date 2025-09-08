@@ -131,12 +131,17 @@ function patch_python() {
   done
 }
 
+function patch_v8() {
+  patch -p1 -i "${ROOT_DIR}/ossm/patches/v8.patch"
+}
+
 function main() {
   validate
   init
   run_bazel
   copy_files
   patch_python
+  patch_v8
 
   echo
   echo "Done. Inspect the result with git status"
