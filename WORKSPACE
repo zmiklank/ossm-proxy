@@ -24,7 +24,7 @@ load("//bazel:repositories.bzl", "define_envoy_implementation")
 # Commit date: 10/10/25
 ENVOY_SHA = "6809bbcfd36ca5168945607b570d21b86ce42d13"
 
-ENVOY_SHA256 = "e58fa82762eb2d89cd6becd9334655687f991c5b96c08834316f656532e9f29a"
+ENVOY_SHA256 = "73e209f7135dcdfd93b76d9383fa3587fdffc6b8bf259ca6236bbabe5a5bde1d"
 
 ENVOY_ORG = "envoyproxy"
 
