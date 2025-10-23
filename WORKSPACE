@@ -31,7 +31,7 @@ new_local_repository(
 # Commit date: 10/22/25
 ENVOY_SHA = "6809bbcfd36ca5168945607b570d21b86ce42d13"
 
-ENVOY_SHA256 = "73e209f7135dcdfd93b76d9383fa3587fdffc6b8bf259ca6236bbabe5a5bde1d"
+ENVOY_SHA256 = "ad06e9614a37299e1e3b14a0117c11dc8fe465d89abd77f872bb123444f54c6c"
 
 ENVOY_ORG = "envoyproxy"
 
