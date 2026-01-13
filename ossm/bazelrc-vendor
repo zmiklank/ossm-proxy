@@ -59,7 +59,6 @@ build --override_repository=com_google_protobuf_protoc_linux_x86_64=/work/ossm/v
 build --override_repository=com_google_protoconverter=/work/ossm/vendor/com_google_protoconverter
 build --override_repository=com_google_protofieldextraction=/work/ossm/vendor/com_google_protofieldextraction
 build --override_repository=com_googlesource_code_re2=/work/ossm/vendor/com_googlesource_code_re2
-build --override_repository=com_googlesource_googleurl=/work/ossm/vendor/com_googlesource_googleurl
 build --override_repository=dev_cel=/work/ossm/vendor/dev_cel
 build --override_repository=dev_pip3=/work/ossm/vendor/dev_pip3
 build --override_repository=dragonbox=/work/ossm/vendor/dragonbox
@@ -70,6 +69,7 @@ build --override_repository=envoy_toolshed=/work/ossm/vendor/envoy_toolshed
 build --override_repository=fast_float=/work/ossm/vendor/fast_float
 build --override_repository=fp16=/work/ossm/vendor/fp16
 build --override_repository=fuzzing_pip3=/work/ossm/vendor/fuzzing_pip3
+build --override_repository=googleurl=/work/ossm/vendor/googleurl
 build --override_repository=grpc_httpjson_transcoding=/work/ossm/vendor/grpc_httpjson_transcoding
 build --override_repository=highway=/work/ossm/vendor/highway
 build --override_repository=intel_dlb=/work/ossm/vendor/intel_dlb
