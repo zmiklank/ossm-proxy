@@ -79,7 +79,7 @@ build:linux --action_env=BAZEL_LINKOPTS=-lm
 build --define absl=1
 
 # Disable ICU linking for googleurl.
-build --@com_googlesource_googleurl//build_config:system_icu=0
+build --@googleurl//build_config:system_icu=0
 
 # Common flags for sanitizers
 build:sanitizer --define tcmalloc=disabled
@@ -610,6 +610,12 @@ common:debug --config=debug-bazel
 common:debug --config=debug-sandbox
 common:debug --config=debug-coverage
 common:debug --config=debug-tests
+
+#############################################################################
+# compat: Compatibility with main branch repo settings
+#############################################################################
+common:bes --config=bes-envoy-engflow
+common:rbe --config=remote-envoy-engflow
 
 try-import %workspace%/repo.bazelrc
 try-import %workspace%/clang.bazelrc
