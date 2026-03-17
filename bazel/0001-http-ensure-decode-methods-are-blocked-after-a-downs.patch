@@ -1,0 +1,272 @@
+From 6f619527e94c1f1a5b86f79f3abb7e51ec78d8a1 Mon Sep 17 00:00:00 2001
+From: Rohit Agrawal <rohit.agrawal@databricks.com>
+Date: Wed, 21 Jan 2026 07:39:17 -0800
+Subject: [PATCH 1/4] http: ensure decode* methods are blocked after a
+ downstream reset
+
+Signed-off-by: Rohit Agrawal <rohit.agrawal@databricks.com>
+Signed-off-by: Ryan Northey <ryan@synca.io>
+---
+ changelogs/current.yaml                 |   6 +
+ source/common/http/filter_manager.cc    |  10 ++
+ source/common/http/filter_manager.h     |   7 +-
+ test/common/http/filter_manager_test.cc | 180 ++++++++++++++++++++++++
+ 4 files changed, 202 insertions(+), 1 deletion(-)
+
+diff --git a/changelogs/current.yaml b/changelogs/current.yaml
+index 9ecf0d6e48..6e7a5af208 100644
+--- a/changelogs/current.yaml
++++ b/changelogs/current.yaml
+@@ -8,6 +8,12 @@ minor_behavior_changes:
+ 
+ bug_fixes:
+ # *Changes expected to improve the state of the world and are unlikely to have negative effects*
++- area: http
++  change: |
++    Fixed an issue where filter chain execution could continue on HTTP streams that had been reset but not yet
++    destroyed. This could cause use-after-free conditions when filter callbacks were invoked on filters that
++    had already received ``onDestroy()``. The fix ensures that ``decodeHeaders()``, ``decodeData()``,
++    ``decodeTrailers()``, and ``decodeMetadata()`` are blocked after a downstream reset.
+ 
+ removed_config_or_runtime:
+ # *Normally occurs at the end of the* :ref:`deprecation period <deprecated>`
+diff --git a/source/common/http/filter_manager.cc b/source/common/http/filter_manager.cc
+index 2db8bec5d0..f085bac4eb 100644
+--- a/source/common/http/filter_manager.cc
++++ b/source/common/http/filter_manager.cc
+@@ -560,6 +560,11 @@ void FilterManager::maybeContinueDecoding(StreamDecoderFilters::Iterator continu
+ 
+ void FilterManager::decodeHeaders(ActiveStreamDecoderFilter* filter, RequestHeaderMap& headers,
+                                   bool end_stream) {
++  // If the stream has been reset, do not process any more frames.
++  if (stopDecoderFilterChain()) {
++    return;
++  }
++
+   // Headers filter iteration should always start with the next filter if available.
+   StreamDecoderFilters::Iterator entry =
+       commonDecodePrefix(filter, FilterIterationStartState::AlwaysStartFromNext);
+@@ -868,6 +873,11 @@ void FilterManager::decodeMetadata(ActiveStreamDecoderFilter* filter, MetadataMa
+   ScopeTrackerScopeState scope(&*this, dispatcher_);
+   filter_manager_callbacks_.resetIdleTimer();
+ 
++  // If the stream has been reset, do not process any more frames.
++  if (stopDecoderFilterChain()) {
++    return;
++  }
++
+   // Filter iteration may start at the current filter.
+   StreamDecoderFilters::Iterator entry =
+       commonDecodePrefix(filter, FilterIterationStartState::CanStartFromCurrent);
+diff --git a/source/common/http/filter_manager.h b/source/common/http/filter_manager.h
+index 3819705f77..d5360ebdd5 100644
+--- a/source/common/http/filter_manager.h
++++ b/source/common/http/filter_manager.h
+@@ -1088,7 +1088,12 @@ private:
+     return request_metadata_map_vector_.get();
+   }
+ 
+-  bool stopDecoderFilterChain() { return state_.decoder_filter_chain_aborted_; }
++  // Returns true if the decoder filter chain should not process any more frames.
++  // This includes cases where the chain was explicitly aborted (e.g., local reply)
++  // or where the downstream connection has been reset.
++  bool stopDecoderFilterChain() {
++    return state_.decoder_filter_chain_aborted_ || state_.saw_downstream_reset_;
++  }
+ 
+   bool stopEncoderFilterChain() { return state_.encoder_filter_chain_aborted_; }
+ 
+diff --git a/test/common/http/filter_manager_test.cc b/test/common/http/filter_manager_test.cc
+index b2af2b000d..0dabcacac7 100644
+--- a/test/common/http/filter_manager_test.cc
++++ b/test/common/http/filter_manager_test.cc
+@@ -757,6 +757,186 @@ TEST_F(FilterManagerTest, IdleTimerResets) {
+   filter_1->decoder_callbacks_->encodeTrailers(std::move(basic_resp_trailers));
+   filter_manager_->destroyFilters();
+ }
++
++// Verify that decodeData is not called on filters after the stream has been reset.
++TEST_F(FilterManagerTest, DecodeDataNotCalledAfterDownstreamReset) {
++  initialize();
++
++  std::shared_ptr<MockStreamDecoderFilter> filter(new NiceMock<MockStreamDecoderFilter>());
++
++  EXPECT_CALL(filter_factory_, createFilterChain(_))
++      .WillOnce(Invoke([&](FilterChainManager& manager) -> bool {
++        auto factory = createDecoderFilterFactoryCb(filter);
++        manager.applyFilterFactoryCb({}, factory);
++        return true;
++      }));
++  filter_manager_->createDownstreamFilterChain();
++
++  RequestHeaderMapPtr headers{
++      new TestRequestHeaderMapImpl{{":authority", "host"}, {":path", "/"}, {":method", "POST"}}};
++  ON_CALL(filter_manager_callbacks_, requestHeaders()).WillByDefault(Return(makeOptRef(*headers)));
++
++  EXPECT_CALL(*filter, decodeHeaders(_, false)).WillOnce(Return(FilterHeadersStatus::Continue));
++  filter_manager_->requestHeadersInitialized();
++  filter_manager_->decodeHeaders(*headers, false);
++
++  // Simulate a downstream reset.
++  filter_manager_->onDownstreamReset();
++
++  // After reset, decodeData should not be called on the filter.
++  EXPECT_CALL(*filter, decodeData(_, _)).Times(0);
++
++  Buffer::OwnedImpl data("test_data");
++  filter_manager_->decodeData(data, false);
++
++  filter_manager_->destroyFilters();
++}
++
++// Verify that decodeHeaders is not called on filters after the stream has been reset.
++TEST_F(FilterManagerTest, DecodeHeadersNotCalledAfterDownstreamReset) {
++  initialize();
++
++  std::shared_ptr<MockStreamDecoderFilter> filter(new NiceMock<MockStreamDecoderFilter>());
++
++  EXPECT_CALL(filter_factory_, createFilterChain(_))
++      .WillOnce(Invoke([&](FilterChainManager& manager) -> bool {
++        auto factory = createDecoderFilterFactoryCb(filter);
++        manager.applyFilterFactoryCb({}, factory);
++        return true;
++      }));
++  filter_manager_->createDownstreamFilterChain();
++
++  // Simulate a downstream reset before headers are processed.
++  filter_manager_->onDownstreamReset();
++
++  // After reset, decodeHeaders should not be called on the filter.
++  EXPECT_CALL(*filter, decodeHeaders(_, _)).Times(0);
++
++  RequestHeaderMapPtr headers{
++      new TestRequestHeaderMapImpl{{":authority", "host"}, {":path", "/"}, {":method", "GET"}}};
++  ON_CALL(filter_manager_callbacks_, requestHeaders()).WillByDefault(Return(makeOptRef(*headers)));
++
++  filter_manager_->decodeHeaders(*headers, true);
++
++  filter_manager_->destroyFilters();
++}
++
++// Verify that decodeTrailers is not called on filters after the stream has been reset.
++TEST_F(FilterManagerTest, DecodeTrailersNotCalledAfterDownstreamReset) {
++  initialize();
++
++  std::shared_ptr<MockStreamDecoderFilter> filter(new NiceMock<MockStreamDecoderFilter>());
++
++  EXPECT_CALL(filter_factory_, createFilterChain(_))
++      .WillOnce(Invoke([&](FilterChainManager& manager) -> bool {
++        auto factory = createDecoderFilterFactoryCb(filter);
++        manager.applyFilterFactoryCb({}, factory);
++        return true;
++      }));
++  filter_manager_->createDownstreamFilterChain();
++
++  RequestHeaderMapPtr headers{
++      new TestRequestHeaderMapImpl{{":authority", "host"}, {":path", "/"}, {":method", "POST"}}};
++  ON_CALL(filter_manager_callbacks_, requestHeaders()).WillByDefault(Return(makeOptRef(*headers)));
++
++  EXPECT_CALL(*filter, decodeHeaders(_, false)).WillOnce(Return(FilterHeadersStatus::Continue));
++  filter_manager_->requestHeadersInitialized();
++  filter_manager_->decodeHeaders(*headers, false);
++
++  // Simulate a downstream reset.
++  filter_manager_->onDownstreamReset();
++
++  // After reset, decodeTrailers should not be called on the filter.
++  EXPECT_CALL(*filter, decodeTrailers(_)).Times(0);
++
++  RequestTrailerMapPtr trailers{new TestRequestTrailerMapImpl{{"foo", "bar"}}};
++  ON_CALL(filter_manager_callbacks_, requestTrailers())
++      .WillByDefault(Return(makeOptRef(*trailers)));
++
++  filter_manager_->decodeTrailers(*trailers);
++
++  filter_manager_->destroyFilters();
++}
++
++// Verify that decodeMetadata is not called on filters after the stream has been reset.
++TEST_F(FilterManagerTest, DecodeMetadataNotCalledAfterDownstreamReset) {
++  initialize();
++
++  std::shared_ptr<MockStreamDecoderFilter> filter(new NiceMock<MockStreamDecoderFilter>());
++
++  EXPECT_CALL(filter_factory_, createFilterChain(_))
++      .WillOnce(Invoke([&](FilterChainManager& manager) -> bool {
++        auto factory = createDecoderFilterFactoryCb(filter);
++        manager.applyFilterFactoryCb({}, factory);
++        return true;
++      }));
++  filter_manager_->createDownstreamFilterChain();
++
++  RequestHeaderMapPtr headers{
++      new TestRequestHeaderMapImpl{{":authority", "host"}, {":path", "/"}, {":method", "POST"}}};
++  ON_CALL(filter_manager_callbacks_, requestHeaders()).WillByDefault(Return(makeOptRef(*headers)));
++
++  EXPECT_CALL(*filter, decodeHeaders(_, false)).WillOnce(Return(FilterHeadersStatus::Continue));
++  filter_manager_->requestHeadersInitialized();
++  filter_manager_->decodeHeaders(*headers, false);
++
++  // Simulate a downstream reset.
++  filter_manager_->onDownstreamReset();
++
++  // After reset, decodeMetadata should not be called on the filter.
++  EXPECT_CALL(*filter, decodeMetadata(_)).Times(0);
++
++  MetadataMap metadata_map{{"key", "value"}};
++  filter_manager_->decodeMetadata(metadata_map);
++
++  filter_manager_->destroyFilters();
++}
++
++// Verify that multiple decode operations are all blocked after downstream reset.
++TEST_F(FilterManagerTest, AllDecodeOperationsBlockedAfterDownstreamReset) {
++  initialize();
++
++  std::shared_ptr<MockStreamDecoderFilter> filter(new NiceMock<MockStreamDecoderFilter>());
++
++  EXPECT_CALL(filter_factory_, createFilterChain(_))
++      .WillOnce(Invoke([&](FilterChainManager& manager) -> bool {
++        auto factory = createDecoderFilterFactoryCb(filter);
++        manager.applyFilterFactoryCb({}, factory);
++        return true;
++      }));
++  filter_manager_->createDownstreamFilterChain();
++
++  RequestHeaderMapPtr headers{
++      new TestRequestHeaderMapImpl{{":authority", "host"}, {":path", "/"}, {":method", "POST"}}};
++  ON_CALL(filter_manager_callbacks_, requestHeaders()).WillByDefault(Return(makeOptRef(*headers)));
++
++  EXPECT_CALL(*filter, decodeHeaders(_, false)).WillOnce(Return(FilterHeadersStatus::Continue));
++  filter_manager_->requestHeadersInitialized();
++  filter_manager_->decodeHeaders(*headers, false);
++
++  // Simulate a downstream reset.
++  filter_manager_->onDownstreamReset();
++
++  // After reset, none of the decode operations should call the filter.
++  EXPECT_CALL(*filter, decodeData(_, _)).Times(0);
++  EXPECT_CALL(*filter, decodeTrailers(_)).Times(0);
++  EXPECT_CALL(*filter, decodeMetadata(_)).Times(0);
++
++  // Try all decode operations. None of them should reach the filter.
++  Buffer::OwnedImpl data("test_data");
++  filter_manager_->decodeData(data, false);
++
++  MetadataMap metadata_map{{"key", "value"}};
++  filter_manager_->decodeMetadata(metadata_map);
++
++  RequestTrailerMapPtr trailers{new TestRequestTrailerMapImpl{{"foo", "bar"}}};
++  ON_CALL(filter_manager_callbacks_, requestTrailers())
++      .WillByDefault(Return(makeOptRef(*trailers)));
++  filter_manager_->decodeTrailers(*trailers);
++
++  filter_manager_->destroyFilters();
++}
++
+ } // namespace
+ } // namespace Http
+ } // namespace Envoy
+-- 
+2.52.0
+
