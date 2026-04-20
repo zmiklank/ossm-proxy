@@ -112,7 +112,7 @@ class Function {
 
     std::string getHeader(const clang::SourceManager &srcmgr) const {
       clang::SourceLocation sloc = getFileLoc(srcmgr, m_node->getLocation());
-      const clang::FileEntry *declfile = srcmgr.getFileEntryForID(srcmgr.getFileID(sloc));
+      const clang::OptionalFileEntryRef declfile = srcmgr.getFileEntryRefForID(srcmgr.getFileID(sloc));
       return declfile->getName().str();
     }
 
@@ -254,7 +254,7 @@ class MyFrontendAction: public clang::ASTFrontendAction {
     bool prefixable(clang::SourceLocation sloc) {
       const clang::SourceManager &srcmgr = getCompilerInstance().getSourceManager();
       clang::FileID fileid = srcmgr.getFileID(getFileLoc(srcmgr, sloc));
-      if(const clang::FileEntry *declfile = srcmgr.getFileEntryForID(fileid)) {
+      if(const clang::OptionalFileEntryRef declfile = srcmgr.getFileEntryRefForID(fileid)) {
         return prefixable (declfile->getName().str());
       }
 
@@ -404,6 +404,9 @@ class CompilationDatabase : public clang::tooling::CompilationDatabase
           "dummy",
           std::string("-I") + opt::incdir().string(),
           "-I" LLVM_LIBRARY_DIR "/clang/" LLVM_VERSION_STRING "/include/",
+          "-I" LLVM_LIBRARY_DIR "/clang/" + std::to_string(LLVM_VERSION_MAJOR) + "/include/",
+          // RHEL ships with a different path for the Clang headers
+          "-I/usr/lib/clang/" + std::to_string(LLVM_VERSION_MAJOR) + "/include",
           file.str()
       };
       return { clang::tooling::CompileCommand(".", file, cmdline, "") };
