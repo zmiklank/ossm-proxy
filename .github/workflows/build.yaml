@@ -11,16 +11,13 @@ jobs:
         uses: sclorg/testing-farm-as-github-action@v4
         with:
           api_key: ${{ secrets.TESTING_FARM_API_TOKEN }}
+          api_url: https://api.testing-farm.io/v0.1
+          tf_scope: private
           compose: RHEL-9-Nightly
           git_url: ${{ github.event.pull_request.head.repo.clone_url }}
           git_ref: ${{ github.event.pull_request.head.sha }}
-          plan: /plans/build
-          pool: aws-10-bare-metal-dedicated
-          hardware: |
-            virtualization:
-              is-virtualized: false
-          timeout: 60
+          tmt_plan_regex: /plans/build
+          tmt_hardware: '{"virtualization": {"is-virtualized": false}}'
           tmt_context: "arch=x86_64"
-          environment_settings: |
-            SOURCE_REPO=${{ github.event.pull_request.head.repo.clone_url }}
-            SOURCE_REF=${{ github.event.pull_request.head.sha }}
+          variables: "SOURCE_REPO=${{ github.event.pull_request.head.repo.clone_url }};SOURCE_REF=${{ github.event.pull_request.head.sha }}"
+          timeout: 60
