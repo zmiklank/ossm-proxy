@@ -1,0 +1,3 @@
+summary: Build proxy on bare metal
+test: bash test.sh
+duration: 3h
