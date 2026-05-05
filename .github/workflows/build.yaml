@@ -10,10 +10,9 @@ jobs:
       - name: Run build on Testing Farm bare metal
         uses: sclorg/testing-farm-as-github-action@v4
         with:
-          api_key: ${{ secrets.TESTING_FARM_API_TOKEN }}
+          api_key: ${{ secrets.TESTING_FARM_PUBLIC_API_TOKEN }}
           api_url: https://api.testing-farm.io/v0.1
-          tf_scope: public
-          compose: RHEL-9-Nightly
+          compose: CentOS-Stream-10
           git_url: ${{ github.event.pull_request.head.repo.clone_url }}
           git_ref: ${{ github.event.pull_request.head.sha }}
           tmt_plan_regex: /plans/build
