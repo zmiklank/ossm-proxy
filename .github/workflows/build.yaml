@@ -8,6 +8,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Run build on Testing Farm bare metal
+        id: tf
         uses: sclorg/testing-farm-as-github-action@v4
         with:
           api_key: ${{ secrets.TESTING_FARM_PUBLIC_API_TOKEN }}
@@ -19,4 +20,39 @@ jobs:
           tmt_hardware: '{"virtualization": {"is-virtualized": false}}'
           tmt_context: "arch=x86_64"
           variables: "SOURCE_REPO=${{ github.event.pull_request.head.repo.clone_url }};SOURCE_REF=${{ github.event.pull_request.head.sha }}"
-          timeout: 60
+          timeout: 120
+          update_pull_request_status: true
+          pull_request_status_name: "Testing Farm bare metal"
+          create_issue_comment: true
+
+      - name: Fetch Testing Farm logs
+        if: failure()
+        env:
+          REQUEST_ID: ${{ steps.tf.outputs.request_id }}
+        run: |
+          if [ -z "${REQUEST_ID}" ]; then
+            echo "No TF request ID — provisioning never started"
+            exit 0
+          fi
+          ARTIFACTS="https://artifacts.dev.testing-farm.io/${REQUEST_ID}"
+          echo "Artifacts URL: ${ARTIFACTS}"
+          mkdir -p tf-logs
+          python3 -c "
+          import urllib.request
+          try:
+              r = urllib.request.urlopen('${ARTIFACTS}/pipeline.log', timeout=30)
+              open('tf-logs/pipeline.log', 'wb').write(r.read())
+              print('pipeline.log downloaded')
+          except Exception as e:
+              print(f'Could not download pipeline.log: {e}')
+          "
+          echo "=== Last 200 lines of pipeline.log ==="
+          tail -200 tf-logs/pipeline.log 2>/dev/null || echo "(no log)"
+
+      - name: Upload Testing Farm logs as artifact
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: testing-farm-logs-${{ steps.tf.outputs.request_id }}
+          path: tf-logs/
+          retention-days: 7
