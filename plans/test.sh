@@ -1,5 +1,7 @@
 set -euo pipefail
 
+sysctl -w user.max_user_namespaces=15000
+
 git clone ${SOURCE_REPO} proxy-src
 cd proxy-src
 git checkout ${SOURCE_REF}
