@@ -6,6 +6,9 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    permissions:
+      statuses: write      # needed for update_pull_request_status
+      pull-requests: write # needed for create_issue_comment
     steps:
       - name: Run build on Testing Farm bare metal
         id: tf
