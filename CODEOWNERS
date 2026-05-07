@@ -1,1 +1,7 @@
-* @istio/release-managers-1-30
+# Inherited from upstream Envoy — no effect while require_code_owner_reviews is disabled
+# * @istio/release-managers-1-30
+# CI configuration — requires review from the proxy maintainers team
+# Note: for this configuration to work we need to enable "Require review from code owners" option
+#       in branch settings per branch
+/.github/workflows/ @openshift-service-mesh/envoy-team @openshift-service-mesh/sail-team
+/plans/             @openshift-service-mesh/envoy-team @openshift-service-mesh/sail-team
