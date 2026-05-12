@@ -65,7 +65,7 @@ jobs:
           #!/usr/bin/env bash
           set -euo pipefail
 
-          API_URL="https://api.testing-farm.io/v0.1"
+          API_URL="https://api.dev.testing-farm.io/v0.1"
           POOL="aws-10-bare-metal-dedicated"
           TIMEOUT_MIN=120
 
@@ -254,7 +254,7 @@ jobs:
           #!/usr/bin/env bash
           set -euo pipefail
 
-          API_URL="https://api.testing-farm.io/v0.1"
+          API_URL="https://api.dev.testing-farm.io/v0.1"
           POOL="aws-10-bare-metal-dedicated"
           TIMEOUT_MIN=120
 
