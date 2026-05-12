@@ -65,8 +65,8 @@ jobs:
           #!/usr/bin/env bash
           set -euo pipefail
 
-          API_URL="https://api.dev.testing-farm.io/v0.1"
-          POOL="aws-10-bare-metal-dedicated"
+          API_URL="https://api.testing-farm.io/v0.1"
+          POOL="aws-10-bare-metal"
           TIMEOUT_MIN=120
 
           # Cancel TF request on unexpected job exit (GHA cancel button sends SIGTERM)
@@ -254,8 +254,8 @@ jobs:
           #!/usr/bin/env bash
           set -euo pipefail
 
-          API_URL="https://api.dev.testing-farm.io/v0.1"
-          POOL="aws-10-bare-metal-dedicated"
+          API_URL="https://api.testing-farm.io/v0.1"
+          POOL="aws-10-bare-metal"
           TIMEOUT_MIN=120
 
           # Cancel TF request on unexpected job exit (GHA cancel button sends SIGTERM)
