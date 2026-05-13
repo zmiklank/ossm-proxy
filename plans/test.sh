@@ -37,8 +37,10 @@ if [[ ${EXIT_CODE} -eq 0 ]]; then
   echo "=== Build succeeded — last 300 lines ==="
   tail -300 "${TMPLOG}"
 
-  # Phase 2: package the release artifact using the warm Bazel cache.
-  # envoy_tar just runs pkg_tar on the already-built :envoy binary — takes ~15s.
+  # Phase 2: package the release artifact using the warm Bazel cache (~15s).
+  # The result is stored in $TMT_TEST_DATA, accessible from the RH internal network
+  # at artifacts.osci.redhat.com. Note: GitHub Actions runners cannot access
+  # that host (private RH network) so this is for manual inspection only.
   echo "=== Packaging release artifact (envoy_tar) ==="
   SHA=$(podman exec --workdir /work "${CNAME}" git rev-parse --verify HEAD)
   ARCH=$(podman exec --workdir /work "${CNAME}" uname -m)
@@ -48,16 +50,11 @@ if [[ ${EXIT_CODE} -eq 0 ]]; then
   podman exec --workdir /work "${CNAME}" \
     bash -c 'source ossm/ci/common.sh && bazel_build envoy_tar' >> "${TMPLOG}" 2>&1
 
-  # cp -L resolves the bazel-bin symlink inside the container and writes the real
-  # bytes to /work/, which maps to the host-mounted volume.
   podman exec --workdir /work "${CNAME}" \
     cp -L bazel-bin/envoy_tar.tar.gz "/work/${ARTIFACT}"
 
-  # Store in TMT_TEST_DATA so TF archives it at artifacts.osci.redhat.com.
-  # The GHA workflow picks it up from there and uploads to GCS.
   cp "${ARTIFACT}" "${TMT_TEST_DATA}/${ARTIFACT}"
-  echo "ARTIFACT_NAME=${ARTIFACT}" > "${TMT_TEST_DATA}/artifact.env"
-  echo "Release artifact packaged: ${ARTIFACT} ($(du -sh "${ARTIFACT}" | cut -f1))"
+  echo "Release artifact: ${ARTIFACT} ($(du -sh "${ARTIFACT}" | cut -f1))"
 
 else
   echo "=== Build FAILED — full output ==="

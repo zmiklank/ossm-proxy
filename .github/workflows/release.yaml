@@ -5,10 +5,10 @@ name: Release artifact (post-merge)
 # Triggered when a PR is merged to release-1.28.
 # Produces envoy-alpha-{SHA}.tar.gz and envoy-alpha-{SHA}-arm64.tar.gz in GCS.
 #
-# Fast path: if the pre-submit (build.yaml) already built and cached the artifact as
-# a GHA artifact for the PR HEAD commit, we download it directly and skip TF entirely.
-# Fallback: if the cached artifact is not available (expired or pre-submit failed),
-# we launch a TF job with plans/release to rebuild from scratch.
+# The TF bare metal machine (which has internet access) uploads the artifact
+# directly to GCS. The GCS service account key is passed as a TF secret.
+# GitHub Actions runners cannot access artifacts.osci.redhat.com (private RH
+# network) so the upload must happen from within the TF environment.
 
 on:
   push:
@@ -16,14 +16,8 @@ on:
       - release-1.28
   workflow_dispatch:
     inputs:
-      pr_head_sha:
-        description: |
-          SHA del commit del PR que pasó el CI (para buscar el GHA artifact en caché).
-          Déjalo vacío para auto-detectar desde el merge commit (solo funciona en merge commits reales).
-        required: false
-        default: ''
       dry_run:
-        description: 'Si true, omite el upload a GCS (para pruebas sin escribir en producción)'
+        description: 'If true, skip the GCS upload (for testing without credentials)'
         required: false
         type: boolean
         default: true
@@ -31,99 +25,23 @@ on:
 jobs:
   release-x86:
     runs-on: ubuntu-latest
-    permissions:
-      statuses: write
     steps:
-      - name: Find pre-submit artifact (fast path)
-        id: cache
-        env:
-          GH_TOKEN: ${{ github.token }}
-          INPUT_PR_HEAD_SHA: ${{ github.event.inputs.pr_head_sha }}
-        run: |
-          set -euo pipefail
-
-          if [[ -n "${INPUT_PR_HEAD_SHA}" ]]; then
-            # workflow_dispatch: SHA provided explicitly
-            PR_HEAD_SHA="${INPUT_PR_HEAD_SHA}"
-            echo "Using manually provided PR HEAD SHA: ${PR_HEAD_SHA}"
-          else
-            # push event: extract PR HEAD SHA from merge commit parents
-            PR_HEAD_SHA=$(gh api "repos/${GITHUB_REPOSITORY}/commits/${GITHUB_SHA}" \
-              --jq '.parents[1].sha // empty')
-            if [[ -z "${PR_HEAD_SHA}" ]]; then
-              echo "Could not determine PR HEAD SHA (not a merge commit — use pr_head_sha input for manual runs)"
-              echo "found=false" >> "${GITHUB_OUTPUT}"
-              exit 0
-            fi
-          fi
-
-          ARTIFACT_NAME="envoy-alpha-${PR_HEAD_SHA}.tar.gz"
-          echo "Looking for pre-submit artifact: ${ARTIFACT_NAME}"
-
-          ARTIFACT_ID=$(gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts" \
-            --jq ".artifacts[] | select(.name == \"${ARTIFACT_NAME}\" and .expired == false) | .id" \
-            | head -1)
-
-          if [[ -z "${ARTIFACT_ID}" ]]; then
-            echo "Pre-submit artifact not found or expired — will rebuild via TF"
-            echo "found=false" >> "${GITHUB_OUTPUT}"
-          else
-            echo "Found pre-submit artifact (id=${ARTIFACT_ID}): ${ARTIFACT_NAME}"
-            gh run download --repo "${GITHUB_REPOSITORY}" \
-              --name "${ARTIFACT_NAME}" --dir artifact-download
-            mv "artifact-download/${ARTIFACT_NAME}" "${ARTIFACT_NAME}"
-            echo "found=true"             >> "${GITHUB_OUTPUT}"
-            echo "artifact_name=${ARTIFACT_NAME}" >> "${GITHUB_OUTPUT}"
-          fi
-
-      # --- Fast path: artifact already available, upload to GCS directly ---
-
-      - name: Upload to GCS (fast path)
-        if: steps.cache.outputs.found == 'true'
-        env:
-          GCS_SERVICE_ACCOUNT_KEY: ${{ secrets.GCS_SERVICE_ACCOUNT_KEY }}
-          ARTIFACT_NAME: ${{ steps.cache.outputs.artifact_name }}
-          DRY_RUN: ${{ github.event.inputs.dry_run || 'false' }}
-        run: |
-          set -euo pipefail
-          if [[ "${DRY_RUN}" == "true" ]]; then
-            echo "DRY RUN: would upload ${ARTIFACT_NAME} to gs://maistra-prow-testing/proxy/"
-            echo "Artifact size: $(du -sh "${ARTIFACT_NAME}" | cut -f1)"
-            exit 0
-          fi
-          echo "${GCS_SERVICE_ACCOUNT_KEY}" > /tmp/gcs-key.json
-          pip install --quiet google-cloud-storage
-          python3 - <<'EOF'
-          import os
-          from google.cloud import storage
-
-          client = storage.Client.from_service_account_json('/tmp/gcs-key.json')
-          bucket = client.bucket('maistra-prow-testing')
-          artifact = os.environ['ARTIFACT_NAME']
-          blob = bucket.blob(f'proxy/{artifact}')
-          blob.upload_from_filename(artifact)
-          url = f'https://storage.googleapis.com/maistra-prow-testing/proxy/{artifact}'
-          print(f'Uploaded: {url}')
-          EOF
-          rm -f /tmp/gcs-key.json
-
-      # --- Fallback path: rebuild via Testing Farm ---
-
-      - name: Install Testing Farm CLI (fallback)
-        if: steps.cache.outputs.found != 'true'
+      - name: Install Testing Farm CLI
         run: pip install --quiet tft-cli
 
-      - name: Build release artifact on Testing Farm (fallback)
+      - name: Build and publish release artifact (x86_64)
         id: tf
-        if: steps.cache.outputs.found != 'true'
         env:
           TESTING_FARM_API_TOKEN: ${{ secrets.TESTING_FARM_API_TOKEN }}
           GH_TOKEN: ${{ github.token }}
           GIT_REF: ${{ github.ref_name }}
           SOURCE_REPO: ${{ format('{0}/{1}.git', github.server_url, github.repository) }}
           SOURCE_REF: ${{ github.sha }}
-          STATUS_NAME: "Release artifact x86_64"
           ARCH: x86_64
+          # GCS key is base64-encoded to safely pass as a TF environment variable.
+          # The TF machine decodes it and uses it to upload directly to GCS.
+          GCS_SERVICE_ACCOUNT_KEY: ${{ secrets.GCS_SERVICE_ACCOUNT_KEY }}
+          DRY_RUN: ${{ github.event.inputs.dry_run || 'false' }}
         run: |
           #!/usr/bin/env bash
           set -euo pipefail
@@ -139,9 +57,18 @@ jobs:
           }
           trap tf_cancel EXIT
 
-          ARTIFACTS_URL=""
+          # Determine whether to pass the GCS key to TF
+          # Base64-encode the GCS key so it can be passed safely as a TF env var
+          # (the JSON content contains newlines and special characters)
+          GCS_ENV_FLAG=""
+          if [[ "${DRY_RUN}" != "true" && -n "${GCS_SERVICE_ACCOUNT_KEY:-}" ]]; then
+            GCS_KEY_B64=$(echo "${GCS_SERVICE_ACCOUNT_KEY}" | base64 -w0)
+            GCS_ENV_FLAG="--environment GCS_KEY_JSON_B64=${GCS_KEY_B64}"
+          else
+            echo "Note: GCS upload will be skipped (dry_run=${DRY_RUN}, key_set=$([[ -n "${GCS_SERVICE_ACCOUNT_KEY:-}" ]] && echo yes || echo no))"
+          fi
 
-          echo "Submitting TF release request (pool: ${POOL}, arch: ${ARCH})..."
+          echo "Submitting TF release request (arch: ${ARCH})..."
           REQ_OUTPUT=$(TESTING_FARM_API_URL="${API_URL}" testing-farm request \
             --compose "RHEL-9-Nightly" \
             --arch "${ARCH}" \
@@ -152,6 +79,7 @@ jobs:
             --plan "/plans/release" \
             --environment "SOURCE_REPO=${SOURCE_REPO}" \
             --environment "SOURCE_REF=${SOURCE_REF}" \
+            ${GCS_ENV_FLAG} \
             --timeout "${TIMEOUT_MIN}" \
             --no-wait 2>&1)
           echo "${REQ_OUTPUT}"
@@ -190,6 +118,19 @@ jobs:
               [[ -n "${API_ARTS}" && "${API_ARTS}" != "null" ]] && ARTIFACTS_URL="${API_ARTS}"
               echo "artifacts_url=${ARTIFACTS_URL}" >> "${GITHUB_OUTPUT}"
 
+              {
+                echo "## Release artifact x86_64"
+                echo "| Field | Value |"
+                echo "|-------|-------|"
+                echo "| Request ID | \`${REQ_ID}\` |"
+                echo "| State | ${STATE} |"
+                echo "| Result | ${RESULT:-n/a} |"
+                if [[ "${DRY_RUN}" != "true" && "${STATE}" == "complete" && "${RESULT}" == "passed" ]]; then
+                  GCS_URL="https://storage.googleapis.com/maistra-prow-testing/proxy/envoy-alpha-${SOURCE_REF}.tar.gz"
+                  echo "| GCS artifact | [Download](${GCS_URL}) |"
+                fi
+              } >> "${GITHUB_STEP_SUMMARY}"
+
               trap - EXIT; REQ_ID=""
               [[ "${STATE}" == "complete" && "${RESULT}" == "passed" ]] && exit 0 || exit 1
             fi
@@ -200,143 +141,23 @@ jobs:
             sleep 30
           done
 
-      - name: Collect artifact from TF (fallback)
-        id: tf-artifact
-        if: steps.cache.outputs.found != 'true' && success()
-        env:
-          ARTIFACTS_URL: ${{ steps.tf.outputs.artifacts_url }}
-        run: |
-          set -euo pipefail
-          WORK_DIR=$(curl -sf "${ARTIFACTS_URL}/pipeline.log" \
-            | grep -oP "working directory '\Kwork-[^']+" | head -1)
-          [[ -z "${WORK_DIR}" ]] && { echo "ERROR: work directory not found"; exit 1; }
-
-          DATA_URL="${ARTIFACTS_URL}/${WORK_DIR}/plans/release/execute/data/guest/default-0/plans/release-1/data"
-          ARTIFACT_NAME=$(curl -sf "${DATA_URL}/artifact.env" | grep "^ARTIFACT_NAME=" | cut -d= -f2)
-          [[ -z "${ARTIFACT_NAME}" ]] && { echo "ERROR: artifact.env not found"; exit 1; }
-
-          curl -fL --retry 3 -o "${ARTIFACT_NAME}" "${DATA_URL}/${ARTIFACT_NAME}"
-          ls -lh "${ARTIFACT_NAME}"
-          echo "artifact_name=${ARTIFACT_NAME}" >> "${GITHUB_OUTPUT}"
-
-      - name: Upload to GCS (fallback)
-        if: steps.cache.outputs.found != 'true' && success()
-        env:
-          GCS_SERVICE_ACCOUNT_KEY: ${{ secrets.GCS_SERVICE_ACCOUNT_KEY }}
-          ARTIFACT_NAME: ${{ steps.tf-artifact.outputs.artifact_name }}
-          DRY_RUN: ${{ github.event.inputs.dry_run || 'false' }}
-        run: |
-          set -euo pipefail
-          if [[ "${DRY_RUN}" == "true" ]]; then
-            echo "DRY RUN: would upload ${ARTIFACT_NAME} to gs://maistra-prow-testing/proxy/"
-            echo "Artifact size: $(du -sh "${ARTIFACT_NAME}" | cut -f1)"
-            exit 0
-          fi
-          echo "${GCS_SERVICE_ACCOUNT_KEY}" > /tmp/gcs-key.json
-          pip install --quiet google-cloud-storage
-          python3 - <<'EOF'
-          import os
-          from google.cloud import storage
-
-          client = storage.Client.from_service_account_json('/tmp/gcs-key.json')
-          bucket = client.bucket('maistra-prow-testing')
-          artifact = os.environ['ARTIFACT_NAME']
-          blob = bucket.blob(f'proxy/{artifact}')
-          blob.upload_from_filename(artifact)
-          url = f'https://storage.googleapis.com/maistra-prow-testing/proxy/{artifact}'
-          print(f'Uploaded: {url}')
-          EOF
-          rm -f /tmp/gcs-key.json
-
   release-arm64:
     runs-on: ubuntu-latest
-    permissions:
-      statuses: write
     steps:
-      - name: Find pre-submit artifact (fast path)
-        id: cache
-        env:
-          GH_TOKEN: ${{ github.token }}
-          INPUT_PR_HEAD_SHA: ${{ github.event.inputs.pr_head_sha }}
-        run: |
-          set -euo pipefail
-
-          if [[ -n "${INPUT_PR_HEAD_SHA}" ]]; then
-            PR_HEAD_SHA="${INPUT_PR_HEAD_SHA}"
-            echo "Using manually provided PR HEAD SHA: ${PR_HEAD_SHA}"
-          else
-            PR_HEAD_SHA=$(gh api "repos/${GITHUB_REPOSITORY}/commits/${GITHUB_SHA}" \
-              --jq '.parents[1].sha // empty')
-            if [[ -z "${PR_HEAD_SHA}" ]]; then
-              echo "Could not determine PR HEAD SHA (not a merge commit — use pr_head_sha input for manual runs)"
-              echo "found=false" >> "${GITHUB_OUTPUT}"
-              exit 0
-            fi
-          fi
-
-          ARTIFACT_NAME="envoy-alpha-${PR_HEAD_SHA}-arm64.tar.gz"
-          echo "Looking for pre-submit artifact: ${ARTIFACT_NAME}"
-
-          ARTIFACT_ID=$(gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts" \
-            --jq ".artifacts[] | select(.name == \"${ARTIFACT_NAME}\" and .expired == false) | .id" \
-            | head -1)
-
-          if [[ -z "${ARTIFACT_ID}" ]]; then
-            echo "Pre-submit artifact not found or expired — will rebuild via TF"
-            echo "found=false" >> "${GITHUB_OUTPUT}"
-          else
-            echo "Found pre-submit artifact (id=${ARTIFACT_ID}): ${ARTIFACT_NAME}"
-            gh run download --repo "${GITHUB_REPOSITORY}" \
-              --name "${ARTIFACT_NAME}" --dir artifact-download
-            mv "artifact-download/${ARTIFACT_NAME}" "${ARTIFACT_NAME}"
-            echo "found=true"             >> "${GITHUB_OUTPUT}"
-            echo "artifact_name=${ARTIFACT_NAME}" >> "${GITHUB_OUTPUT}"
-          fi
-
-      - name: Upload to GCS (fast path)
-        if: steps.cache.outputs.found == 'true'
-        env:
-          GCS_SERVICE_ACCOUNT_KEY: ${{ secrets.GCS_SERVICE_ACCOUNT_KEY }}
-          ARTIFACT_NAME: ${{ steps.cache.outputs.artifact_name }}
-          DRY_RUN: ${{ github.event.inputs.dry_run || 'false' }}
-        run: |
-          set -euo pipefail
-          if [[ "${DRY_RUN}" == "true" ]]; then
-            echo "DRY RUN: would upload ${ARTIFACT_NAME} to gs://maistra-prow-testing/proxy/"
-            echo "Artifact size: $(du -sh "${ARTIFACT_NAME}" | cut -f1)"
-            exit 0
-          fi
-          echo "${GCS_SERVICE_ACCOUNT_KEY}" > /tmp/gcs-key.json
-          pip install --quiet google-cloud-storage
-          python3 - <<'EOF'
-          import os
-          from google.cloud import storage
-
-          client = storage.Client.from_service_account_json('/tmp/gcs-key.json')
-          bucket = client.bucket('maistra-prow-testing')
-          artifact = os.environ['ARTIFACT_NAME']
-          blob = bucket.blob(f'proxy/{artifact}')
-          blob.upload_from_filename(artifact)
-          url = f'https://storage.googleapis.com/maistra-prow-testing/proxy/{artifact}'
-          print(f'Uploaded: {url}')
-          EOF
-          rm -f /tmp/gcs-key.json
-
-      - name: Install Testing Farm CLI (fallback)
-        if: steps.cache.outputs.found != 'true'
+      - name: Install Testing Farm CLI
         run: pip install --quiet tft-cli
 
-      - name: Build release artifact on Testing Farm arm64 (fallback)
+      - name: Build and publish release artifact (arm64)
         id: tf
-        if: steps.cache.outputs.found != 'true'
         env:
           TESTING_FARM_API_TOKEN: ${{ secrets.TESTING_FARM_API_TOKEN }}
           GH_TOKEN: ${{ github.token }}
           GIT_REF: ${{ github.ref_name }}
           SOURCE_REPO: ${{ format('{0}/{1}.git', github.server_url, github.repository) }}
           SOURCE_REF: ${{ github.sha }}
-          STATUS_NAME: "Release artifact arm64"
           ARCH: aarch64
+          GCS_SERVICE_ACCOUNT_KEY: ${{ secrets.GCS_SERVICE_ACCOUNT_KEY }}
+          DRY_RUN: ${{ github.event.inputs.dry_run || 'false' }}
         run: |
           #!/usr/bin/env bash
           set -euo pipefail
@@ -352,9 +173,17 @@ jobs:
           }
           trap tf_cancel EXIT
 
-          ARTIFACTS_URL=""
+          # Base64-encode the GCS key so it can be passed safely as a TF env var
+          # (the JSON content contains newlines and special characters)
+          GCS_ENV_FLAG=""
+          if [[ "${DRY_RUN}" != "true" && -n "${GCS_SERVICE_ACCOUNT_KEY:-}" ]]; then
+            GCS_KEY_B64=$(echo "${GCS_SERVICE_ACCOUNT_KEY}" | base64 -w0)
+            GCS_ENV_FLAG="--environment GCS_KEY_JSON_B64=${GCS_KEY_B64}"
+          else
+            echo "Note: GCS upload will be skipped (dry_run=${DRY_RUN}, key_set=$([[ -n "${GCS_SERVICE_ACCOUNT_KEY:-}" ]] && echo yes || echo no))"
+          fi
 
-          echo "Submitting TF release request (pool: ${POOL}, arch: ${ARCH})..."
+          echo "Submitting TF release request (arch: ${ARCH})..."
           REQ_OUTPUT=$(TESTING_FARM_API_URL="${API_URL}" testing-farm request \
             --compose "RHEL-9-Nightly" \
             --arch "${ARCH}" \
@@ -365,6 +194,7 @@ jobs:
             --plan "/plans/release" \
             --environment "SOURCE_REPO=${SOURCE_REPO}" \
             --environment "SOURCE_REF=${SOURCE_REF}" \
+            ${GCS_ENV_FLAG} \
             --timeout "${TIMEOUT_MIN}" \
             --no-wait 2>&1)
           echo "${REQ_OUTPUT}"
@@ -375,6 +205,8 @@ jobs:
           ARTIFACTS_URL="https://artifacts.osci.redhat.com/testing-farm/${REQ_ID}"
           echo "request_id=${REQ_ID}"          >> "${GITHUB_OUTPUT}"
           echo "artifacts_url=${ARTIFACTS_URL}" >> "${GITHUB_OUTPUT}"
+          echo "Request ID: ${REQ_ID}"
+          echo "Artifacts:  ${ARTIFACTS_URL}"
 
           DEADLINE=$(( $(date +%s) + TIMEOUT_MIN * 60 ))
           POLL=0
@@ -401,6 +233,19 @@ jobs:
               [[ -n "${API_ARTS}" && "${API_ARTS}" != "null" ]] && ARTIFACTS_URL="${API_ARTS}"
               echo "artifacts_url=${ARTIFACTS_URL}" >> "${GITHUB_OUTPUT}"
 
+              {
+                echo "## Release artifact arm64"
+                echo "| Field | Value |"
+                echo "|-------|-------|"
+                echo "| Request ID | \`${REQ_ID}\` |"
+                echo "| State | ${STATE} |"
+                echo "| Result | ${RESULT:-n/a} |"
+                if [[ "${DRY_RUN}" != "true" && "${STATE}" == "complete" && "${RESULT}" == "passed" ]]; then
+                  GCS_URL="https://storage.googleapis.com/maistra-prow-testing/proxy/envoy-alpha-${SOURCE_REF}-arm64.tar.gz"
+                  echo "| GCS artifact | [Download](${GCS_URL}) |"
+                fi
+              } >> "${GITHUB_STEP_SUMMARY}"
+
               trap - EXIT; REQ_ID=""
               [[ "${STATE}" == "complete" && "${RESULT}" == "passed" ]] && exit 0 || exit 1
             fi
@@ -410,45 +255,3 @@ jobs:
             fi
             sleep 30
           done
-
-      - name: Collect artifact from TF arm64 (fallback)
-        id: tf-artifact
-        if: steps.cache.outputs.found != 'true' && success()
-        env:
-          ARTIFACTS_URL: ${{ steps.tf.outputs.artifacts_url }}
-        run: |
-          set -euo pipefail
-          WORK_DIR=$(curl -sf "${ARTIFACTS_URL}/pipeline.log" \
-            | grep -oP "working directory '\Kwork-[^']+" | head -1)
-          [[ -z "${WORK_DIR}" ]] && { echo "ERROR: work directory not found"; exit 1; }
-
-          DATA_URL="${ARTIFACTS_URL}/${WORK_DIR}/plans/release/execute/data/guest/default-0/plans/release-1/data"
-          ARTIFACT_NAME=$(curl -sf "${DATA_URL}/artifact.env" | grep "^ARTIFACT_NAME=" | cut -d= -f2)
-          [[ -z "${ARTIFACT_NAME}" ]] && { echo "ERROR: artifact.env not found"; exit 1; }
-
-          curl -fL --retry 3 -o "${ARTIFACT_NAME}" "${DATA_URL}/${ARTIFACT_NAME}"
-          ls -lh "${ARTIFACT_NAME}"
-          echo "artifact_name=${ARTIFACT_NAME}" >> "${GITHUB_OUTPUT}"
-
-      - name: Upload to GCS arm64 (fallback)
-        if: steps.cache.outputs.found != 'true' && success()
-        env:
-          GCS_SERVICE_ACCOUNT_KEY: ${{ secrets.GCS_SERVICE_ACCOUNT_KEY }}
-          ARTIFACT_NAME: ${{ steps.tf-artifact.outputs.artifact_name }}
-        run: |
-          set -euo pipefail
-          echo "${GCS_SERVICE_ACCOUNT_KEY}" > /tmp/gcs-key.json
-          pip install --quiet google-cloud-storage
-          python3 - <<'EOF'
-          import os
-          from google.cloud import storage
-
-          client = storage.Client.from_service_account_json('/tmp/gcs-key.json')
-          bucket = client.bucket('maistra-prow-testing')
-          artifact = os.environ['ARTIFACT_NAME']
-          blob = bucket.blob(f'proxy/{artifact}')
-          blob.upload_from_filename(artifact)
-          url = f'https://storage.googleapis.com/maistra-prow-testing/proxy/{artifact}'
-          print(f'Uploaded: {url}')
-          EOF
-          rm -f /tmp/gcs-key.json

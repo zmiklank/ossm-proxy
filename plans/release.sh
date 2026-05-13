@@ -1,8 +1,9 @@
 set -euo pipefail
 
-# Fallback release script: runs when the pre-submit artifact is not available.
-# Equivalent to ossm/ci/post-submit.sh but without GCS upload (GHA handles upload).
-# Builds envoy_tar and stores it in $TMT_TEST_DATA for the GHA workflow to collect.
+# Release build script: builds envoy_tar and uploads directly to GCS from the
+# TF machine (which has internet access). Equivalent to ossm/ci/post-submit.sh.
+# The GCS service account key is passed as GCS_KEY_JSON_B64 (base64-encoded JSON)
+# via a TF secret. If the key is not set, the GCS upload is skipped.
 
 sysctl -w user.max_user_namespaces=15000
 
@@ -39,18 +40,43 @@ if [[ ${EXIT_CODE} -eq 0 ]]; then
   [[ "${ARCH}" == "aarch64" ]] && ARCH_SUFFIX="-arm64" || ARCH_SUFFIX=""
   ARTIFACT="envoy-alpha-${SHA}${ARCH_SUFFIX}.tar.gz"
 
-  # Resolve the bazel-bin symlink and copy the real file into the volume
   podman exec --workdir /work "${CNAME}" \
     cp -L bazel-bin/envoy_tar.tar.gz "/work/${ARTIFACT}"
-
-  cp "${ARTIFACT}" "${TMT_TEST_DATA}/${ARTIFACT}"
-  echo "ARTIFACT_NAME=${ARTIFACT}" > "${TMT_TEST_DATA}/artifact.env"
 
   echo "=== Build output — first 300 lines ==="
   head -300 "${TMPLOG}"
   echo "=== Build output — last 300 lines ==="
   tail -300 "${TMPLOG}"
-  echo "Release artifact ready: ${ARTIFACT} ($(du -sh "${ARTIFACT}" | cut -f1))"
+  echo "Artifact built: ${ARTIFACT} ($(du -sh "${ARTIFACT}" | cut -f1))"
+
+  # Upload to GCS directly from the TF machine (which has internet access to GCS).
+  # GCS_KEY_JSON_B64 is the base64-encoded service account JSON, passed as a TF secret.
+  if [[ -n "${GCS_KEY_JSON_B64:-}" ]]; then
+    echo "=== Uploading to GCS ==="
+    echo "${GCS_KEY_JSON_B64}" | base64 -d > /tmp/gcs-key.json
+    pip3 install --quiet google-cloud-storage
+    python3 - <<EOF
+import os
+from google.cloud import storage
+
+client = storage.Client.from_service_account_json('/tmp/gcs-key.json')
+bucket = client.bucket('maistra-prow-testing')
+artifact = '${ARTIFACT}'
+blob = bucket.blob(f'proxy/{artifact}')
+blob.upload_from_filename(artifact)
+url = f'https://storage.googleapis.com/maistra-prow-testing/proxy/{artifact}'
+print(f'Uploaded: {url}')
+EOF
+    rm -f /tmp/gcs-key.json
+    GCS_URL="https://storage.googleapis.com/maistra-prow-testing/proxy/${ARTIFACT}"
+    echo "GCS_URL=${GCS_URL}" > "${TMT_TEST_DATA}/artifact.env"
+    echo "Release artifact published: ${GCS_URL}"
+  else
+    echo "GCS_KEY_JSON_B64 not set — skipping GCS upload (dry run or credentials not configured)"
+    echo "Artifact available at TF artifacts storage (RH internal network only)"
+    cp "${ARTIFACT}" "${TMT_TEST_DATA}/${ARTIFACT}"
+  fi
+
 else
   echo "=== Build FAILED — full output ==="
   cat "${TMPLOG}"

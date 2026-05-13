@@ -69,7 +69,6 @@ jobs:
           POOL="aws-10-bare-metal"
           TIMEOUT_MIN=120
 
-          # Cancel TF request on unexpected job exit (GHA cancel button sends SIGTERM)
           REQ_ID=""
           tf_cancel() {
             [[ -n "${REQ_ID}" ]] && \
@@ -77,7 +76,6 @@ jobs:
           }
           trap tf_cancel EXIT
 
-          # Update PR commit status helper
           set_pr_status() {
             local state="$1" description="$2"
             [[ -z "${PR_COMMIT_SHA}" ]] && return 0
@@ -91,7 +89,6 @@ jobs:
           ARTIFACTS_URL=""
           set_pr_status "pending" "Build running on Testing Farm bare metal..."
 
-          # Submit request
           echo "Submitting TF request (pool: ${POOL}, arch: ${ARCH})..."
           REQ_OUTPUT=$(TESTING_FARM_API_URL="${API_URL}" testing-farm request \
             --compose "RHEL-9-Nightly" \
@@ -116,7 +113,6 @@ jobs:
           echo "Request ID: ${REQ_ID}"
           echo "Artifacts:  ${ARTIFACTS_URL}"
 
-          # Poll for completion
           DEADLINE=$(( $(date +%s) + TIMEOUT_MIN * 60 ))
           POLL=0
           while true; do
@@ -142,7 +138,6 @@ jobs:
               [[ -n "${API_ARTS}" && "${API_ARTS}" != "null" ]] && ARTIFACTS_URL="${API_ARTS}"
               echo "artifacts_url=${ARTIFACTS_URL}" >> "${GITHUB_OUTPUT}"
 
-              # GitHub Step Summary
               {
                 echo "## ${STATUS_NAME}"
                 echo "| Field | Value |"
@@ -153,7 +148,6 @@ jobs:
                 echo "| Artifacts | [View](${ARTIFACTS_URL}) |"
               } >> "${GITHUB_STEP_SUMMARY}"
 
-              # PR comment
               if [[ -n "${PR_NUMBER}" ]]; then
                 gh pr comment "${PR_NUMBER}" \
                   --repo "${GITHUB_REPOSITORY}" \
@@ -161,16 +155,13 @@ jobs:
                   || true
               fi
 
-              # PR commit status
               case "${STATE}:${RESULT}" in
                 complete:passed) set_pr_status "success" "Build passed" ;;
                 complete:*)      set_pr_status "failure" "Build failed: ${RESULT:-unknown}" ;;
                 *)               set_pr_status "error"   "TF ${STATE}" ;;
               esac
 
-              # Clear EXIT trap — request is in terminal state, nothing to cancel
               trap - EXIT; REQ_ID=""
-
               [[ "${STATE}" == "complete" && "${RESULT}" == "passed" ]] && exit 0 || exit 1
             fi
 
@@ -182,54 +173,6 @@ jobs:
 
             sleep 30
           done
-
-      - name: Collect release artifact from TF
-        id: artifact
-        if: success()
-        env:
-          ARTIFACTS_URL: ${{ steps.tf.outputs.artifacts_url }}
-        run: |
-          set -eo pipefail
-
-          echo "Fetching pipeline.log from ${ARTIFACTS_URL} ..."
-          PIPELINE_LOG=$(curl -s "${ARTIFACTS_URL}/pipeline.log" || true)
-          if [[ -z "${PIPELINE_LOG}" ]]; then
-            echo "ERROR: could not fetch pipeline.log from ${ARTIFACTS_URL}"
-            exit 1
-          fi
-
-          # Extract the TMT work directory name (e.g. work-buildXXXXX)
-          WORK_DIR=$(echo "${PIPELINE_LOG}" | grep -o "work-build[^']*" | head -1 || true)
-          if [[ -z "${WORK_DIR}" ]]; then
-            echo "ERROR: work directory not found in pipeline.log"
-            echo "--- pipeline.log (first 20 lines) ---"
-            echo "${PIPELINE_LOG}" | head -20
-            exit 1
-          fi
-          echo "Work directory: ${WORK_DIR}"
-
-          DATA_URL="${ARTIFACTS_URL}/${WORK_DIR}/plans/build/execute/data/guest/default-0/plans/build-1/data"
-          echo "Fetching artifact.env from ${DATA_URL} ..."
-          ARTIFACT_NAME=$(curl -s "${DATA_URL}/artifact.env" | grep "^ARTIFACT_NAME=" | cut -d= -f2 || true)
-          if [[ -z "${ARTIFACT_NAME}" ]]; then
-            echo "ERROR: artifact.env not found or empty at ${DATA_URL}"
-            exit 1
-          fi
-          echo "Artifact name: ${ARTIFACT_NAME}"
-
-          echo "Downloading ${ARTIFACT_NAME} ..."
-          curl -fL --retry 3 -o "${ARTIFACT_NAME}" "${DATA_URL}/${ARTIFACT_NAME}"
-          ls -lh "${ARTIFACT_NAME}"
-          echo "name=${ARTIFACT_NAME}" >> "${GITHUB_OUTPUT}"
-
-      - name: Upload release artifact (pre-submit cache)
-        if: success() && steps.artifact.outputs.name != ''
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{ steps.artifact.outputs.name }}
-          path: ${{ steps.artifact.outputs.name }}
-          retention-days: 7
-          if-no-files-found: error
 
       - name: Fetch Testing Farm logs
         if: failure()
@@ -306,7 +249,6 @@ jobs:
           POOL="aws-10-bare-metal"
           TIMEOUT_MIN=120
 
-          # Cancel TF request on unexpected job exit (GHA cancel button sends SIGTERM)
           REQ_ID=""
           tf_cancel() {
             [[ -n "${REQ_ID}" ]] && \
@@ -314,7 +256,6 @@ jobs:
           }
           trap tf_cancel EXIT
 
-          # Update PR commit status helper
           set_pr_status() {
             local state="$1" description="$2"
             [[ -z "${PR_COMMIT_SHA}" ]] && return 0
@@ -328,7 +269,6 @@ jobs:
           ARTIFACTS_URL=""
           set_pr_status "pending" "Build running on Testing Farm bare metal..."
 
-          # Submit request
           echo "Submitting TF request (pool: ${POOL}, arch: ${ARCH})..."
           REQ_OUTPUT=$(TESTING_FARM_API_URL="${API_URL}" testing-farm request \
             --compose "RHEL-9-Nightly" \
@@ -353,7 +293,6 @@ jobs:
           echo "Request ID: ${REQ_ID}"
           echo "Artifacts:  ${ARTIFACTS_URL}"
 
-          # Poll for completion
           DEADLINE=$(( $(date +%s) + TIMEOUT_MIN * 60 ))
           POLL=0
           while true; do
@@ -379,7 +318,6 @@ jobs:
               [[ -n "${API_ARTS}" && "${API_ARTS}" != "null" ]] && ARTIFACTS_URL="${API_ARTS}"
               echo "artifacts_url=${ARTIFACTS_URL}" >> "${GITHUB_OUTPUT}"
 
-              # GitHub Step Summary
               {
                 echo "## ${STATUS_NAME}"
                 echo "| Field | Value |"
@@ -390,7 +328,6 @@ jobs:
                 echo "| Artifacts | [View](${ARTIFACTS_URL}) |"
               } >> "${GITHUB_STEP_SUMMARY}"
 
-              # PR comment
               if [[ -n "${PR_NUMBER}" ]]; then
                 gh pr comment "${PR_NUMBER}" \
                   --repo "${GITHUB_REPOSITORY}" \
@@ -398,16 +335,13 @@ jobs:
                   || true
               fi
 
-              # PR commit status
               case "${STATE}:${RESULT}" in
                 complete:passed) set_pr_status "success" "Build passed" ;;
                 complete:*)      set_pr_status "failure" "Build failed: ${RESULT:-unknown}" ;;
                 *)               set_pr_status "error"   "TF ${STATE}" ;;
               esac
 
-              # Clear EXIT trap — request is in terminal state, nothing to cancel
               trap - EXIT; REQ_ID=""
-
               [[ "${STATE}" == "complete" && "${RESULT}" == "passed" ]] && exit 0 || exit 1
             fi
 
@@ -419,35 +353,6 @@ jobs:
 
             sleep 30
           done
-
-      - name: Collect release artifact from TF
-        id: artifact
-        if: success()
-        env:
-          ARTIFACTS_URL: ${{ steps.tf.outputs.artifacts_url }}
-        run: |
-          set -euo pipefail
-          WORK_DIR=$(curl -sf "${ARTIFACTS_URL}/pipeline.log" \
-            | grep -oP "working directory '\Kwork-build[^']+" | head -1)
-          [[ -z "${WORK_DIR}" ]] && { echo "ERROR: work directory not found in pipeline.log"; exit 1; }
-
-          DATA_URL="${ARTIFACTS_URL}/${WORK_DIR}/plans/build/execute/data/guest/default-0/plans/build-1/data"
-          ARTIFACT_NAME=$(curl -sf "${DATA_URL}/artifact.env" | grep "^ARTIFACT_NAME=" | cut -d= -f2)
-          [[ -z "${ARTIFACT_NAME}" ]] && { echo "ERROR: artifact.env not found at ${DATA_URL}"; exit 1; }
-
-          echo "Downloading ${ARTIFACT_NAME} from TF artifacts..."
-          curl -fL --retry 3 -o "${ARTIFACT_NAME}" "${DATA_URL}/${ARTIFACT_NAME}"
-          ls -lh "${ARTIFACT_NAME}"
-          echo "name=${ARTIFACT_NAME}" >> "${GITHUB_OUTPUT}"
-
-      - name: Upload release artifact (pre-submit cache)
-        if: success() && steps.artifact.outputs.name != ''
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{ steps.artifact.outputs.name }}
-          path: ${{ steps.artifact.outputs.name }}
-          retention-days: 7
-          if-no-files-found: error
 
       - name: Fetch Testing Farm logs
         if: failure()
