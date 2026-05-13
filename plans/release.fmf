@@ -1,4 +1,6 @@
-summary: Build openshift-service-mesh proxy on bare metal
+summary: Build and package openshift-service-mesh proxy release artifact
+test: bash release.sh
+duration: 2h
 
 prepare:
   - name: Install dependencies
@@ -7,7 +9,7 @@ prepare:
 
 discover:
   how: fmf
-  test: /plans/build
+  test: /plans/release
 
 execute:
   how: tmt

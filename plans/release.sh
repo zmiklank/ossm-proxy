@@ -1,5 +1,9 @@
 set -euo pipefail
 
+# Fallback release script: runs when the pre-submit artifact is not available.
+# Equivalent to ossm/ci/post-submit.sh but without GCS upload (GHA handles upload).
+# Builds envoy_tar and stores it in $TMT_TEST_DATA for the GHA workflow to collect.
+
 sysctl -w user.max_user_namespaces=15000
 
 git clone ${SOURCE_REPO} proxy-src
@@ -9,12 +13,10 @@ git checkout ${SOURCE_REF}
 LOCAL_JOBS=$(( $(nproc) * 3 / 4 ))
 LOCAL_RAM=$(( $(free -m | awk '/^Mem:/{print $2}') * 85 / 100 ))
 
-CNAME="ossm-build-$$"
+CNAME="ossm-release-$$"
 cleanup_container() { podman rm -f "${CNAME}" 2>/dev/null || true; }
 trap cleanup_container EXIT
 
-# Start container without --rm so we can exec into it twice:
-# once for pre-submit (build + test) and once for envoy_tar packaging.
 podman run -d --name "${CNAME}" --privileged \
   -e CI=true \
   -e LOCAL_JOBS="${LOCAL_JOBS}" \
@@ -26,39 +28,29 @@ podman run -d --name "${CNAME}" --privileged \
 
 TMPLOG=$(mktemp)
 
-# Phase 1: build + test (equivalent to Prow pre-submit)
+echo "=== Building release artifact (envoy_tar) ==="
 podman exec --workdir /work "${CNAME}" \
-  bash ossm/ci/pre-submit.sh > "${TMPLOG}" 2>&1
+  bash -c 'source ossm/ci/common.sh && bazel_build envoy_tar' > "${TMPLOG}" 2>&1
 EXIT_CODE=$?
 
 if [[ ${EXIT_CODE} -eq 0 ]]; then
-  echo "=== Build succeeded — first 300 lines ==="
-  head -300 "${TMPLOG}"
-  echo "=== Build succeeded — last 300 lines ==="
-  tail -300 "${TMPLOG}"
-
-  # Phase 2: package the release artifact using the warm Bazel cache.
-  # envoy_tar just runs pkg_tar on the already-built :envoy binary — takes ~15s.
-  echo "=== Packaging release artifact (envoy_tar) ==="
   SHA=$(podman exec --workdir /work "${CNAME}" git rev-parse --verify HEAD)
   ARCH=$(podman exec --workdir /work "${CNAME}" uname -m)
   [[ "${ARCH}" == "aarch64" ]] && ARCH_SUFFIX="-arm64" || ARCH_SUFFIX=""
   ARTIFACT="envoy-alpha-${SHA}${ARCH_SUFFIX}.tar.gz"
 
-  podman exec --workdir /work "${CNAME}" \
-    bash -c 'source ossm/ci/common.sh && bazel_build envoy_tar' >> "${TMPLOG}" 2>&1
-
-  # cp -L resolves the bazel-bin symlink inside the container and writes the real
-  # bytes to /work/, which maps to the host-mounted volume.
+  # Resolve the bazel-bin symlink and copy the real file into the volume
   podman exec --workdir /work "${CNAME}" \
     cp -L bazel-bin/envoy_tar.tar.gz "/work/${ARTIFACT}"
 
-  # Store in TMT_TEST_DATA so TF archives it at artifacts.osci.redhat.com.
-  # The GHA workflow picks it up from there and uploads to GCS.
   cp "${ARTIFACT}" "${TMT_TEST_DATA}/${ARTIFACT}"
   echo "ARTIFACT_NAME=${ARTIFACT}" > "${TMT_TEST_DATA}/artifact.env"
-  echo "Release artifact packaged: ${ARTIFACT} ($(du -sh "${ARTIFACT}" | cut -f1))"
 
+  echo "=== Build output — first 300 lines ==="
+  head -300 "${TMPLOG}"
+  echo "=== Build output — last 300 lines ==="
+  tail -300 "${TMPLOG}"
+  echo "Release artifact ready: ${ARTIFACT} ($(du -sh "${ARTIFACT}" | cut -f1))"
 else
   echo "=== Build FAILED — full output ==="
   cat "${TMPLOG}"

@@ -183,6 +183,36 @@ jobs:
             sleep 30
           done
 
+      - name: Collect release artifact from TF
+        id: artifact
+        if: success()
+        env:
+          ARTIFACTS_URL: ${{ steps.tf.outputs.artifacts_url }}
+        run: |
+          set -euo pipefail
+          # pipeline.log contains: "[...] working directory 'work-buildXXXXX'"
+          WORK_DIR=$(curl -sf "${ARTIFACTS_URL}/pipeline.log" \
+            | grep -oP "working directory '\Kwork-build[^']+" | head -1)
+          [[ -z "${WORK_DIR}" ]] && { echo "ERROR: work directory not found in pipeline.log"; exit 1; }
+
+          DATA_URL="${ARTIFACTS_URL}/${WORK_DIR}/plans/build/execute/data/guest/default-0/plans/build-1/data"
+          ARTIFACT_NAME=$(curl -sf "${DATA_URL}/artifact.env" | grep "^ARTIFACT_NAME=" | cut -d= -f2)
+          [[ -z "${ARTIFACT_NAME}" ]] && { echo "ERROR: artifact.env not found at ${DATA_URL}"; exit 1; }
+
+          echo "Downloading ${ARTIFACT_NAME} from TF artifacts..."
+          curl -fL --retry 3 -o "${ARTIFACT_NAME}" "${DATA_URL}/${ARTIFACT_NAME}"
+          ls -lh "${ARTIFACT_NAME}"
+          echo "name=${ARTIFACT_NAME}" >> "${GITHUB_OUTPUT}"
+
+      - name: Upload release artifact (pre-submit cache)
+        if: success() && steps.artifact.outputs.name != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.artifact.outputs.name }}
+          path: ${{ steps.artifact.outputs.name }}
+          retention-days: 7
+          if-no-files-found: error
+
       - name: Fetch Testing Farm logs
         if: failure()
         env:
@@ -371,6 +401,35 @@ jobs:
 
             sleep 30
           done
+
+      - name: Collect release artifact from TF
+        id: artifact
+        if: success()
+        env:
+          ARTIFACTS_URL: ${{ steps.tf.outputs.artifacts_url }}
+        run: |
+          set -euo pipefail
+          WORK_DIR=$(curl -sf "${ARTIFACTS_URL}/pipeline.log" \
+            | grep -oP "working directory '\Kwork-build[^']+" | head -1)
+          [[ -z "${WORK_DIR}" ]] && { echo "ERROR: work directory not found in pipeline.log"; exit 1; }
+
+          DATA_URL="${ARTIFACTS_URL}/${WORK_DIR}/plans/build/execute/data/guest/default-0/plans/build-1/data"
+          ARTIFACT_NAME=$(curl -sf "${DATA_URL}/artifact.env" | grep "^ARTIFACT_NAME=" | cut -d= -f2)
+          [[ -z "${ARTIFACT_NAME}" ]] && { echo "ERROR: artifact.env not found at ${DATA_URL}"; exit 1; }
+
+          echo "Downloading ${ARTIFACT_NAME} from TF artifacts..."
+          curl -fL --retry 3 -o "${ARTIFACT_NAME}" "${DATA_URL}/${ARTIFACT_NAME}"
+          ls -lh "${ARTIFACT_NAME}"
+          echo "name=${ARTIFACT_NAME}" >> "${GITHUB_OUTPUT}"
+
+      - name: Upload release artifact (pre-submit cache)
+        if: success() && steps.artifact.outputs.name != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.artifact.outputs.name }}
+          path: ${{ steps.artifact.outputs.name }}
+          retention-days: 7
+          if-no-files-found: error
 
       - name: Fetch Testing Farm logs
         if: failure()
