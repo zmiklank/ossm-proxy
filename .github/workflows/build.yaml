@@ -52,7 +52,7 @@ jobs:
       - name: Run build on Testing Farm bare metal
         id: tf
         env:
-          TESTING_FARM_API_TOKEN: ${{ secrets.TESTING_FARM_API_TOKEN }}
+          TESTING_FARM_API_TOKEN: ${{ secrets.TESTING_FARM_PUBLIC_API_TOKEN }}
           GH_TOKEN: ${{ github.token }}
           GIT_REF: ${{ github.base_ref || github.ref_name }}
           SOURCE_REPO: ${{ github.event.pull_request.head.repo.clone_url || format('{0}/{1}.git', github.server_url, github.repository) }}
@@ -110,6 +110,7 @@ jobs:
           ARTIFACTS_URL="https://artifacts.osci.redhat.com/testing-farm/${REQ_ID}"
           echo "request_id=${REQ_ID}"          >> "${GITHUB_OUTPUT}"
           echo "artifacts_url=${ARTIFACTS_URL}" >> "${GITHUB_OUTPUT}"
+          echo "source_ref=${SOURCE_REF}"       >> "${GITHUB_OUTPUT}"
           echo "Request ID: ${REQ_ID}"
           echo "Artifacts:  ${ARTIFACTS_URL}"
 
@@ -173,6 +174,27 @@ jobs:
 
             sleep 30
           done
+
+      - name: Collect build artifact
+        if: success()
+        env:
+          ARTIFACTS_URL: ${{ steps.tf.outputs.artifacts_url }}
+          SOURCE_REF: ${{ steps.tf.outputs.source_ref }}
+        run: |
+          ARTIFACT="envoy-alpha-${SOURCE_REF}.tar.gz"
+          # TODO: verify this path after first successful build on public ranch
+          TF_PATH="${ARTIFACTS_URL}/artifacts/x86_64/default/plans/build/tests/plans/build/data/${ARTIFACT}"
+          echo "Downloading: ${TF_PATH}"
+          curl -fSL -o "${ARTIFACT}" "${TF_PATH}"
+          echo "Downloaded: ${ARTIFACT} ($(du -sh "${ARTIFACT}" | cut -f1))"
+
+      - name: Upload build artifact
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: envoy-alpha-${{ steps.tf.outputs.source_ref }}
+          path: envoy-alpha-${{ steps.tf.outputs.source_ref }}.tar.gz
+          retention-days: 7
 
       - name: Fetch Testing Farm logs
         if: failure()
@@ -232,7 +254,7 @@ jobs:
       - name: Run build on Testing Farm bare metal (arm64)
         id: tf
         env:
-          TESTING_FARM_API_TOKEN: ${{ secrets.TESTING_FARM_API_TOKEN }}
+          TESTING_FARM_API_TOKEN: ${{ secrets.TESTING_FARM_PUBLIC_API_TOKEN }}
           GH_TOKEN: ${{ github.token }}
           GIT_REF: ${{ github.base_ref || github.ref_name }}
           SOURCE_REPO: ${{ github.event.pull_request.head.repo.clone_url || format('{0}/{1}.git', github.server_url, github.repository) }}
@@ -290,6 +312,7 @@ jobs:
           ARTIFACTS_URL="https://artifacts.osci.redhat.com/testing-farm/${REQ_ID}"
           echo "request_id=${REQ_ID}"          >> "${GITHUB_OUTPUT}"
           echo "artifacts_url=${ARTIFACTS_URL}" >> "${GITHUB_OUTPUT}"
+          echo "source_ref=${SOURCE_REF}"       >> "${GITHUB_OUTPUT}"
           echo "Request ID: ${REQ_ID}"
           echo "Artifacts:  ${ARTIFACTS_URL}"
 
@@ -353,6 +376,27 @@ jobs:
 
             sleep 30
           done
+
+      - name: Collect build artifact (arm64)
+        if: success()
+        env:
+          ARTIFACTS_URL: ${{ steps.tf.outputs.artifacts_url }}
+          SOURCE_REF: ${{ steps.tf.outputs.source_ref }}
+        run: |
+          ARTIFACT="envoy-alpha-${SOURCE_REF}-arm64.tar.gz"
+          # TODO: verify this path after first successful build on public ranch
+          TF_PATH="${ARTIFACTS_URL}/artifacts/aarch64/default/plans/build/tests/plans/build/data/${ARTIFACT}"
+          echo "Downloading: ${TF_PATH}"
+          curl -fSL -o "${ARTIFACT}" "${TF_PATH}"
+          echo "Downloaded: ${ARTIFACT} ($(du -sh "${ARTIFACT}" | cut -f1))"
+
+      - name: Upload build artifact (arm64)
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: envoy-alpha-${{ steps.tf.outputs.source_ref }}-arm64
+          path: envoy-alpha-${{ steps.tf.outputs.source_ref }}-arm64.tar.gz
+          retention-days: 7
 
       - name: Fetch Testing Farm logs
         if: failure()
