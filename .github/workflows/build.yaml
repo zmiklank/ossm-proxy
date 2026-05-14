@@ -184,8 +184,10 @@ jobs:
           SOURCE_REF: ${{ steps.tf.outputs.source_ref }}
         run: |
           ARTIFACT="envoy-alpha-${SOURCE_REF}.tar.gz"
-          # TODO: verify this path after first successful build on public ranch
-          TF_PATH="${ARTIFACTS_URL}/artifacts/x86_64/default/plans/build/tests/plans/build/data/${ARTIFACT}"
+          echo "Fetching results.xml to locate artifact URL..."
+          curl -fSL -o results.xml "${ARTIFACTS_URL}/results.xml"
+          TF_PATH=$(grep -oP 'href="\K[^"]+'"${ARTIFACT}"'[^"]*' results.xml | head -1)
+          [[ -z "${TF_PATH}" ]] && { echo "ERROR: ${ARTIFACT} not found in results.xml"; cat results.xml; exit 1; }
           echo "Downloading: ${TF_PATH}"
           curl -fSL -o "${ARTIFACT}" "${TF_PATH}"
           echo "Downloaded: ${ARTIFACT} ($(du -sh "${ARTIFACT}" | cut -f1))"
@@ -388,8 +390,10 @@ jobs:
           SOURCE_REF: ${{ steps.tf.outputs.source_ref }}
         run: |
           ARTIFACT="envoy-alpha-${SOURCE_REF}-arm64.tar.gz"
-          # TODO: verify this path after first successful build on public ranch
-          TF_PATH="${ARTIFACTS_URL}/artifacts/aarch64/default/plans/build/tests/plans/build/data/${ARTIFACT}"
+          echo "Fetching results.xml to locate artifact URL..."
+          curl -fSL -o results.xml "${ARTIFACTS_URL}/results.xml"
+          TF_PATH=$(grep -oP 'href="\K[^"]+'"${ARTIFACT}"'[^"]*' results.xml | head -1)
+          [[ -z "${TF_PATH}" ]] && { echo "ERROR: ${ARTIFACT} not found in results.xml"; cat results.xml; exit 1; }
           echo "Downloading: ${TF_PATH}"
           curl -fSL -o "${ARTIFACT}" "${TF_PATH}"
           echo "Downloaded: ${ARTIFACT} ($(du -sh "${ARTIFACT}" | cut -f1))"
