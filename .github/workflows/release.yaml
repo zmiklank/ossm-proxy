@@ -70,7 +70,7 @@ jobs:
 
           echo "Submitting TF release request (arch: ${ARCH})..."
           REQ_OUTPUT=$(TESTING_FARM_API_URL="${API_URL}" testing-farm request \
-            --compose "RHEL-9-Nightly" \
+            --compose "CentOS-Stream-10" \
             --arch "${ARCH}" \
             --pool "${POOL}" \
             --hardware "virtualization.is-virtualized=false" \
@@ -185,7 +185,7 @@ jobs:
 
           echo "Submitting TF release request (arch: ${ARCH})..."
           REQ_OUTPUT=$(TESTING_FARM_API_URL="${API_URL}" testing-farm request \
-            --compose "RHEL-9-Nightly" \
+            --compose "CentOS-Stream-10" \
             --arch "${ARCH}" \
             --pool "${POOL}" \
             --hardware "virtualization.is-virtualized=false" \
