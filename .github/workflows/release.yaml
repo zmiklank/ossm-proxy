@@ -32,7 +32,7 @@ jobs:
       - name: Build and publish release artifact (x86_64)
         id: tf
         env:
-          TESTING_FARM_API_TOKEN: ${{ secrets.TESTING_FARM_API_TOKEN }}
+          TESTING_FARM_API_TOKEN: ${{ secrets.TESTING_FARM_PUBLIC_API_TOKEN }}
           GH_TOKEN: ${{ github.token }}
           GIT_REF: ${{ github.ref_name }}
           SOURCE_REPO: ${{ format('{0}/{1}.git', github.server_url, github.repository) }}
@@ -47,7 +47,6 @@ jobs:
           set -euo pipefail
 
           API_URL="https://api.testing-farm.io/v0.1"
-          POOL="aws-10-bare-metal"
           TIMEOUT_MIN=120
 
           REQ_ID=""
@@ -72,7 +71,6 @@ jobs:
           REQ_OUTPUT=$(TESTING_FARM_API_URL="${API_URL}" testing-farm request \
             --compose "CentOS-Stream-10" \
             --arch "${ARCH}" \
-            --pool "${POOL}" \
             --hardware "virtualization.is-virtualized=false" \
             --git-url "https://github.com/openshift-service-mesh/proxy.git" \
             --git-ref "${GIT_REF}" \
@@ -87,7 +85,7 @@ jobs:
           REQ_ID=$(echo "${REQ_OUTPUT}" | grep -oP 'requests/\K[a-f0-9-]+' | head -1 || true)
           [[ -z "${REQ_ID}" ]] && { echo "ERROR: Could not extract request ID"; exit 1; }
 
-          ARTIFACTS_URL="https://artifacts.osci.redhat.com/testing-farm/${REQ_ID}"
+          ARTIFACTS_URL="https://artifacts.dev.testing-farm.io/${REQ_ID}"
           echo "request_id=${REQ_ID}"          >> "${GITHUB_OUTPUT}"
           echo "artifacts_url=${ARTIFACTS_URL}" >> "${GITHUB_OUTPUT}"
           echo "Request ID: ${REQ_ID}"
@@ -150,7 +148,7 @@ jobs:
       - name: Build and publish release artifact (arm64)
         id: tf
         env:
-          TESTING_FARM_API_TOKEN: ${{ secrets.TESTING_FARM_API_TOKEN }}
+          TESTING_FARM_API_TOKEN: ${{ secrets.TESTING_FARM_PUBLIC_API_TOKEN }}
           GH_TOKEN: ${{ github.token }}
           GIT_REF: ${{ github.ref_name }}
           SOURCE_REPO: ${{ format('{0}/{1}.git', github.server_url, github.repository) }}
@@ -163,7 +161,6 @@ jobs:
           set -euo pipefail
 
           API_URL="https://api.testing-farm.io/v0.1"
-          POOL="aws-10-bare-metal"
           TIMEOUT_MIN=120
 
           REQ_ID=""
@@ -187,7 +184,6 @@ jobs:
           REQ_OUTPUT=$(TESTING_FARM_API_URL="${API_URL}" testing-farm request \
             --compose "CentOS-Stream-10" \
             --arch "${ARCH}" \
-            --pool "${POOL}" \
             --hardware "virtualization.is-virtualized=false" \
             --git-url "https://github.com/openshift-service-mesh/proxy.git" \
             --git-ref "${GIT_REF}" \
@@ -202,7 +198,7 @@ jobs:
           REQ_ID=$(echo "${REQ_OUTPUT}" | grep -oP 'requests/\K[a-f0-9-]+' | head -1 || true)
           [[ -z "${REQ_ID}" ]] && { echo "ERROR: Could not extract request ID"; exit 1; }
 
-          ARTIFACTS_URL="https://artifacts.osci.redhat.com/testing-farm/${REQ_ID}"
+          ARTIFACTS_URL="https://artifacts.dev.testing-farm.io/${REQ_ID}"
           echo "request_id=${REQ_ID}"          >> "${GITHUB_OUTPUT}"
           echo "artifacts_url=${ARTIFACTS_URL}" >> "${GITHUB_OUTPUT}"
           echo "Request ID: ${REQ_ID}"
