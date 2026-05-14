@@ -90,6 +90,7 @@ jobs:
           set_pr_status "pending" "Build running on Testing Farm bare metal..."
 
           echo "Submitting TF request (pool: ${POOL}, arch: ${ARCH})..."
+          set +e
           REQ_OUTPUT=$(TESTING_FARM_API_URL="${API_URL}" testing-farm request \
             --compose "RHEL-9-Nightly" \
             --arch "${ARCH}" \
@@ -102,7 +103,10 @@ jobs:
             --environment "SOURCE_REF=${SOURCE_REF}" \
             --timeout "${TIMEOUT_MIN}" \
             --no-wait 2>&1)
+          TF_RC=$?
+          set -e
           echo "${REQ_OUTPUT}"
+          [[ ${TF_RC} -ne 0 ]] && { echo "ERROR: testing-farm request failed (exit ${TF_RC})"; exit ${TF_RC}; }
 
           REQ_ID=$(echo "${REQ_OUTPUT}" | grep -oP 'requests/\K[a-f0-9-]+' | head -1 || true)
           [[ -z "${REQ_ID}" ]] && { echo "ERROR: Could not extract request ID"; exit 1; }
@@ -292,6 +296,7 @@ jobs:
           set_pr_status "pending" "Build running on Testing Farm bare metal..."
 
           echo "Submitting TF request (pool: ${POOL}, arch: ${ARCH})..."
+          set +e
           REQ_OUTPUT=$(TESTING_FARM_API_URL="${API_URL}" testing-farm request \
             --compose "RHEL-9-Nightly" \
             --arch "${ARCH}" \
@@ -304,7 +309,10 @@ jobs:
             --environment "SOURCE_REF=${SOURCE_REF}" \
             --timeout "${TIMEOUT_MIN}" \
             --no-wait 2>&1)
+          TF_RC=$?
+          set -e
           echo "${REQ_OUTPUT}"
+          [[ ${TF_RC} -ne 0 ]] && { echo "ERROR: testing-farm request failed (exit ${TF_RC})"; exit ${TF_RC}; }
 
           REQ_ID=$(echo "${REQ_OUTPUT}" | grep -oP 'requests/\K[a-f0-9-]+' | head -1 || true)
           [[ -z "${REQ_ID}" ]] && { echo "ERROR: Could not extract request ID"; exit 1; }
