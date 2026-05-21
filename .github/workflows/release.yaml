@@ -55,6 +55,23 @@ jobs:
               echo "found=false" >> "${GITHUB_OUTPUT}"
               exit 0
             fi
+
+            # Verify the PR branch was up-to-date with the base at merge time.
+            # parents[0] is the base branch tip before the merge.
+            BASE_BEFORE_MERGE=$(gh api "repos/${GITHUB_REPOSITORY}/commits/${GITHUB_SHA}" \
+              --jq '.parents[0].sha // empty')
+
+            COMPARE_STATUS=$(gh api \
+              "repos/${GITHUB_REPOSITORY}/compare/${BASE_BEFORE_MERGE}...${PR_HEAD_SHA}" \
+              --jq '.status')
+
+            echo "Compare ${BASE_BEFORE_MERGE:0:8}...${PR_HEAD_SHA:0:8}: ${COMPARE_STATUS}"
+
+            if [[ "${COMPARE_STATUS}" != "ahead" && "${COMPARE_STATUS}" != "identical" ]]; then
+              echo "PR branch was not up-to-date with base (compare: ${COMPARE_STATUS}) — must rebuild from merge commit"
+              echo "found=false" >> "${GITHUB_OUTPUT}"
+              exit 0
+            fi
           fi
 
           ARTIFACT_NAME="envoy-alpha-${PR_HEAD_SHA}"
@@ -89,6 +106,13 @@ jobs:
           DRY_RUN: ${{ github.event.inputs.dry_run || 'false' }}
         run: |
           set -euo pipefail
+          # Rename: fast path artifact uses PR HEAD SHA; GCS consumers expect merge commit SHA.
+          if [[ "${GITHUB_EVENT_NAME}" == "push" ]]; then
+            MERGE_ARTIFACT="envoy-alpha-${GITHUB_SHA}.tar.gz"
+            mv "${ARTIFACT_NAME}" "${MERGE_ARTIFACT}"
+            ARTIFACT_NAME="${MERGE_ARTIFACT}"
+            echo "Renamed to merge commit SHA: ${ARTIFACT_NAME}"
+          fi
           if [[ "${DRY_RUN}" == "true" ]]; then
             echo "DRY RUN: would upload ${ARTIFACT_NAME} to gs://maistra-prow-testing/proxy/"
             echo "Artifact size: $(du -sh "${ARTIFACT_NAME}" | cut -f1)"
@@ -273,6 +297,23 @@ jobs:
               echo "found=false" >> "${GITHUB_OUTPUT}"
               exit 0
             fi
+
+            # Verify the PR branch was up-to-date with the base at merge time.
+            # parents[0] is the base branch tip before the merge.
+            BASE_BEFORE_MERGE=$(gh api "repos/${GITHUB_REPOSITORY}/commits/${GITHUB_SHA}" \
+              --jq '.parents[0].sha // empty')
+
+            COMPARE_STATUS=$(gh api \
+              "repos/${GITHUB_REPOSITORY}/compare/${BASE_BEFORE_MERGE}...${PR_HEAD_SHA}" \
+              --jq '.status')
+
+            echo "Compare ${BASE_BEFORE_MERGE:0:8}...${PR_HEAD_SHA:0:8}: ${COMPARE_STATUS}"
+
+            if [[ "${COMPARE_STATUS}" != "ahead" && "${COMPARE_STATUS}" != "identical" ]]; then
+              echo "PR branch was not up-to-date with base (compare: ${COMPARE_STATUS}) — must rebuild from merge commit"
+              echo "found=false" >> "${GITHUB_OUTPUT}"
+              exit 0
+            fi
           fi
 
           ARTIFACT_NAME="envoy-alpha-${PR_HEAD_SHA}-arm64"
@@ -305,6 +346,13 @@ jobs:
           DRY_RUN: ${{ github.event.inputs.dry_run || 'false' }}
         run: |
           set -euo pipefail
+          # Rename: fast path artifact uses PR HEAD SHA; GCS consumers expect merge commit SHA.
+          if [[ "${GITHUB_EVENT_NAME}" == "push" ]]; then
+            MERGE_ARTIFACT="envoy-alpha-${GITHUB_SHA}-arm64.tar.gz"
+            mv "${ARTIFACT_NAME}" "${MERGE_ARTIFACT}"
+            ARTIFACT_NAME="${MERGE_ARTIFACT}"
+            echo "Renamed to merge commit SHA: ${ARTIFACT_NAME}"
+          fi
           if [[ "${DRY_RUN}" == "true" ]]; then
             echo "DRY RUN: would upload ${ARTIFACT_NAME} to gs://maistra-prow-testing/proxy/"
             echo "Artifact size: $(du -sh "${ARTIFACT_NAME}" | cut -f1)"
