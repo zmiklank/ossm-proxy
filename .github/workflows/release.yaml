@@ -18,12 +18,12 @@ on:
     inputs:
       pr_head_sha:
         description: |
-          SHA del commit del PR que pasó el CI (para buscar el GHA artifact en caché).
-          Déjalo vacío para auto-detectar desde el merge commit (solo funciona en merge commits reales).
+          SHA of the PR commit that passed CI (used to look up the cached GHA artifact).
+          Leave empty to auto-detect from the merge commit (only works on real merge commits).
         required: false
         default: ''
       dry_run:
-        description: 'Si true, omite el upload a GCS (para pruebas sin escribir en producción)'
+        description: 'If true, skips the GCS upload (for testing without writing to production)'
         required: false
         type: boolean
         default: true
