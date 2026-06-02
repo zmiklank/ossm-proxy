@@ -29,16 +29,24 @@ on:
         default: true
 
 jobs:
-  release-x86:
+  release:
     runs-on: ubuntu-latest
     permissions:
       statuses: write
+    strategy:
+      matrix:
+        include:
+          - arch: x86_64
+            suffix: ""
+          - arch: aarch64
+            suffix: "-arm64"
     steps:
       - name: Find pre-submit artifact (fast path)
         id: cache
         env:
           GH_TOKEN: ${{ github.token }}
           INPUT_PR_HEAD_SHA: ${{ github.event.inputs.pr_head_sha }}
+          ARTIFACT_SUFFIX: ${{ matrix.suffix }}
         run: |
           set -euo pipefail
 
@@ -72,7 +80,7 @@ jobs:
             fi
           fi
 
-          ARTIFACT_NAME="envoy-alpha-${PR_HEAD_SHA}"
+          ARTIFACT_NAME="envoy-alpha-${PR_HEAD_SHA}${ARTIFACT_SUFFIX}"
           echo "Looking for pre-submit artifact: ${ARTIFACT_NAME}"
 
           ARTIFACT_ID=$(gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts" \
@@ -80,14 +88,14 @@ jobs:
             | head -1)
 
           if [[ -z "${ARTIFACT_ID}" ]]; then
-            echo "Pre-submit artifact not found or expired — will rebuild via TF"
+            echo "Pre-submit artifact not found or expired, will rebuild via TF"
             echo "found=false" >> "${GITHUB_OUTPUT}"
           else
             echo "Found pre-submit artifact (id=${ARTIFACT_ID}): ${ARTIFACT_NAME}"
             gh run download --repo "${GITHUB_REPOSITORY}" \
               --name "${ARTIFACT_NAME}" --dir artifact-download
             ls artifact-download/
-            ARTIFACT_FILE=$(ls artifact-download/envoy-alpha-*.tar.gz | head -1)
+            ARTIFACT_FILE=$(ls artifact-download/*.tar.gz | head -1)
             mv "${ARTIFACT_FILE}" .
             ARTIFACT_BASENAME=$(basename "${ARTIFACT_FILE}")
             echo "found=true"                        >> "${GITHUB_OUTPUT}"
@@ -101,12 +109,13 @@ jobs:
         env:
           GCS_SERVICE_ACCOUNT_KEY: ${{ secrets.GCS_SERVICE_ACCOUNT_KEY }}
           ARTIFACT_NAME: ${{ steps.cache.outputs.artifact_name }}
+          ARTIFACT_SUFFIX: ${{ matrix.suffix }}
           DRY_RUN: ${{ github.event.inputs.dry_run || 'false' }}
         run: |
           set -euo pipefail
           # Rename: fast path artifact uses PR HEAD SHA; GCS consumers expect merge commit SHA.
           if [[ "${GITHUB_EVENT_NAME}" == "push" ]]; then
-            MERGE_ARTIFACT="envoy-alpha-${GITHUB_SHA}.tar.gz"
+            MERGE_ARTIFACT="envoy-alpha-${GITHUB_SHA}${ARTIFACT_SUFFIX}.tar.gz"
             mv "${ARTIFACT_NAME}" "${MERGE_ARTIFACT}"
             ARTIFACT_NAME="${MERGE_ARTIFACT}"
             echo "Renamed to merge commit SHA: ${ARTIFACT_NAME}"
@@ -147,7 +156,7 @@ jobs:
           GIT_REF: ${{ github.ref_name }}
           SOURCE_REPO: ${{ format('{0}/{1}.git', github.server_url, github.repository) }}
           SOURCE_REF: ${{ github.sha }}
-          ARCH: x86_64
+          ARCH: ${{ matrix.arch }}
         run: |
           #!/usr/bin/env bash
           set -euo pipefail
@@ -230,9 +239,10 @@ jobs:
         env:
           ARTIFACTS_URL: ${{ steps.tf.outputs.artifacts_url }}
           SOURCE_REF: ${{ github.sha }}
+          ARTIFACT_SUFFIX: ${{ matrix.suffix }}
         run: |
           set -euo pipefail
-          ARTIFACT="envoy-alpha-${SOURCE_REF}.tar.gz"
+          ARTIFACT="envoy-alpha-${SOURCE_REF}${ARTIFACT_SUFFIX}.tar.gz"
           echo "Fetching results.xml to locate artifact URL..."
           curl -fSL -o results.xml "${ARTIFACTS_URL}/results.xml"
           TF_PATH=$(grep -oP 'href="\K[^"]+'"${ARTIFACT}"'[^"]*' results.xml | head -1)
@@ -243,243 +253,6 @@ jobs:
           echo "artifact_name=${ARTIFACT}" >> "${GITHUB_OUTPUT}"
 
       - name: Upload to GCS (fallback)
-        if: steps.cache.outputs.found != 'true' && success()
-        env:
-          GCS_SERVICE_ACCOUNT_KEY: ${{ secrets.GCS_SERVICE_ACCOUNT_KEY }}
-          ARTIFACT_NAME: ${{ steps.tf-artifact.outputs.artifact_name }}
-          DRY_RUN: ${{ github.event.inputs.dry_run || 'false' }}
-        run: |
-          set -euo pipefail
-          if [[ "${DRY_RUN}" == "true" ]]; then
-            echo "DRY RUN: would upload ${ARTIFACT_NAME} to gs://maistra-prow-testing/proxy/"
-            echo "Artifact size: $(du -sh "${ARTIFACT_NAME}" | cut -f1)"
-            exit 0
-          fi
-          echo "${GCS_SERVICE_ACCOUNT_KEY}" > /tmp/gcs-key.json
-          pip install --quiet google-cloud-storage
-          python3 - <<'EOF'
-          import os
-          from google.cloud import storage
-
-          client = storage.Client.from_service_account_json('/tmp/gcs-key.json')
-          bucket = client.bucket('maistra-prow-testing')
-          artifact = os.environ['ARTIFACT_NAME']
-          blob = bucket.blob(f'proxy/{artifact}')
-          blob.upload_from_filename(artifact)
-          url = f'https://storage.googleapis.com/maistra-prow-testing/proxy/{artifact}'
-          print(f'Uploaded: {url}')
-          EOF
-          rm -f /tmp/gcs-key.json
-
-  release-arm64:
-    runs-on: ubuntu-latest
-    permissions:
-      statuses: write
-    steps:
-      - name: Find pre-submit artifact (fast path)
-        id: cache
-        env:
-          GH_TOKEN: ${{ github.token }}
-          INPUT_PR_HEAD_SHA: ${{ github.event.inputs.pr_head_sha }}
-        run: |
-          set -euo pipefail
-
-          if [[ -n "${INPUT_PR_HEAD_SHA}" ]]; then
-            PR_HEAD_SHA="${INPUT_PR_HEAD_SHA}"
-            echo "Using manually provided PR HEAD SHA: ${PR_HEAD_SHA}"
-          else
-            # push event: determine PR HEAD SHA from commit parents
-            COMMIT_DATA=$(gh api "repos/${GITHUB_REPOSITORY}/commits/${GITHUB_SHA}")
-            PR_HEAD_SHA=$(echo "${COMMIT_DATA}" | jq -r '.parents[1].sha // empty')
-
-            if [[ -n "${PR_HEAD_SHA}" ]]; then
-              # Standard merge commit: verify the PR branch was up-to-date with the base at merge time.
-              # parents[0] is the base branch tip before the merge.
-              BASE_BEFORE_MERGE=$(echo "${COMMIT_DATA}" | jq -r '.parents[0].sha // empty')
-              COMPARE_STATUS=$(gh api \
-                "repos/${GITHUB_REPOSITORY}/compare/${BASE_BEFORE_MERGE}...${PR_HEAD_SHA}" \
-                --jq '.status')
-              echo "Compare ${BASE_BEFORE_MERGE:0:8}...${PR_HEAD_SHA:0:8}: ${COMPARE_STATUS}"
-              if [[ "${COMPARE_STATUS}" != "ahead" && "${COMPARE_STATUS}" != "identical" ]]; then
-                echo "PR branch was not up-to-date with base (compare: ${COMPARE_STATUS}), must rebuild from merge commit"
-                echo "found=false" >> "${GITHUB_OUTPUT}"
-                exit 0
-              fi
-            else
-              # Fast-forward or squash merge: GITHUB_SHA may be the PR commit itself.
-              # Use it and let the artifact lookup below determine if a pre-built artifact exists.
-              PR_HEAD_SHA="${GITHUB_SHA}"
-              echo "No merge commit detected (fast-forward or squash), trying SHA: ${PR_HEAD_SHA}"
-            fi
-          fi
-
-          ARTIFACT_NAME="envoy-alpha-${PR_HEAD_SHA}-arm64"
-          echo "Looking for pre-submit artifact: ${ARTIFACT_NAME}"
-
-          ARTIFACT_ID=$(gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts" \
-            --jq ".artifacts[] | select(.name == \"${ARTIFACT_NAME}\" and .expired == false) | .id" \
-            | head -1)
-
-          if [[ -z "${ARTIFACT_ID}" ]]; then
-            echo "Pre-submit artifact not found or expired — will rebuild via TF"
-            echo "found=false" >> "${GITHUB_OUTPUT}"
-          else
-            echo "Found pre-submit artifact (id=${ARTIFACT_ID}): ${ARTIFACT_NAME}"
-            gh run download --repo "${GITHUB_REPOSITORY}" \
-              --name "${ARTIFACT_NAME}" --dir artifact-download
-            ls artifact-download/
-            ARTIFACT_FILE=$(ls artifact-download/envoy-alpha-*-arm64.tar.gz | head -1)
-            mv "${ARTIFACT_FILE}" .
-            ARTIFACT_BASENAME=$(basename "${ARTIFACT_FILE}")
-            echo "found=true"                        >> "${GITHUB_OUTPUT}"
-            echo "artifact_name=${ARTIFACT_BASENAME}" >> "${GITHUB_OUTPUT}"
-          fi
-
-      - name: Upload to GCS (fast path)
-        if: steps.cache.outputs.found == 'true'
-        env:
-          GCS_SERVICE_ACCOUNT_KEY: ${{ secrets.GCS_SERVICE_ACCOUNT_KEY }}
-          ARTIFACT_NAME: ${{ steps.cache.outputs.artifact_name }}
-          DRY_RUN: ${{ github.event.inputs.dry_run || 'false' }}
-        run: |
-          set -euo pipefail
-          # Rename: fast path artifact uses PR HEAD SHA; GCS consumers expect merge commit SHA.
-          if [[ "${GITHUB_EVENT_NAME}" == "push" ]]; then
-            MERGE_ARTIFACT="envoy-alpha-${GITHUB_SHA}-arm64.tar.gz"
-            mv "${ARTIFACT_NAME}" "${MERGE_ARTIFACT}"
-            ARTIFACT_NAME="${MERGE_ARTIFACT}"
-            echo "Renamed to merge commit SHA: ${ARTIFACT_NAME}"
-          fi
-          if [[ "${DRY_RUN}" == "true" ]]; then
-            echo "DRY RUN: would upload ${ARTIFACT_NAME} to gs://maistra-prow-testing/proxy/"
-            echo "Artifact size: $(du -sh "${ARTIFACT_NAME}" | cut -f1)"
-            exit 0
-          fi
-          echo "${GCS_SERVICE_ACCOUNT_KEY}" > /tmp/gcs-key.json
-          pip install --quiet google-cloud-storage
-          python3 - <<'EOF'
-          import os
-          from google.cloud import storage
-
-          client = storage.Client.from_service_account_json('/tmp/gcs-key.json')
-          bucket = client.bucket('maistra-prow-testing')
-          artifact = os.environ['ARTIFACT_NAME']
-          blob = bucket.blob(f'proxy/{artifact}')
-          blob.upload_from_filename(artifact)
-          url = f'https://storage.googleapis.com/maistra-prow-testing/proxy/{artifact}'
-          print(f'Uploaded: {url}')
-          EOF
-          rm -f /tmp/gcs-key.json
-
-      - name: Install Testing Farm CLI (fallback)
-        if: steps.cache.outputs.found != 'true'
-        run: pip install --quiet tft-cli
-
-      - name: Build release artifact on Testing Farm arm64 (fallback)
-        id: tf
-        if: steps.cache.outputs.found != 'true'
-        env:
-          TESTING_FARM_API_TOKEN: ${{ secrets.TESTING_FARM_PUBLIC_API_TOKEN }}
-          GH_TOKEN: ${{ github.token }}
-          GIT_REF: ${{ github.ref_name }}
-          SOURCE_REPO: ${{ format('{0}/{1}.git', github.server_url, github.repository) }}
-          SOURCE_REF: ${{ github.sha }}
-          ARCH: aarch64
-        run: |
-          #!/usr/bin/env bash
-          set -euo pipefail
-
-          API_URL="https://api.testing-farm.io/v0.1"
-          TIMEOUT_MIN=120
-
-          REQ_ID=""
-          tf_cancel() {
-            [[ -n "${REQ_ID}" ]] && \
-              TESTING_FARM_API_URL="${API_URL}" testing-farm cancel "${REQ_ID}" 2>/dev/null || true
-          }
-          trap tf_cancel EXIT
-
-          echo "Submitting TF release request (arch: ${ARCH})..."
-          set +e
-          REQ_OUTPUT=$(TESTING_FARM_API_URL="${API_URL}" testing-farm request \
-            --compose "CentOS-Stream-10" \
-            --arch "${ARCH}" \
-            --hardware "virtualization.is-virtualized=false" \
-            --git-url "https://github.com/openshift-service-mesh/proxy.git" \
-            --git-ref "${GIT_REF}" \
-            --plan "/plans/release" \
-            --environment "SOURCE_REPO=${SOURCE_REPO}" \
-            --environment "SOURCE_REF=${SOURCE_REF}" \
-            --timeout "${TIMEOUT_MIN}" \
-            --no-wait 2>&1)
-          TF_RC=$?
-          set -e
-          echo "${REQ_OUTPUT}"
-          [[ ${TF_RC} -ne 0 ]] && { echo "ERROR: testing-farm request failed (exit ${TF_RC})"; exit ${TF_RC}; }
-
-          REQ_ID=$(echo "${REQ_OUTPUT}" | grep -oP 'requests/\K[a-f0-9-]+' | head -1 || true)
-          [[ -z "${REQ_ID}" ]] && { echo "ERROR: Could not extract request ID"; exit 1; }
-
-          ARTIFACTS_URL="https://artifacts.dev.testing-farm.io/${REQ_ID}"
-          echo "request_id=${REQ_ID}"          >> "${GITHUB_OUTPUT}"
-          echo "artifacts_url=${ARTIFACTS_URL}" >> "${GITHUB_OUTPUT}"
-          echo "Request ID: ${REQ_ID}"
-          echo "Artifacts:  ${ARTIFACTS_URL}"
-
-          DEADLINE=$(( $(date +%s) + TIMEOUT_MIN * 60 ))
-          POLL=0
-          while true; do
-            POLL=$(( POLL + 1 ))
-            ELAPSED=$(( $(date +%s) - (DEADLINE - TIMEOUT_MIN * 60) ))
-            echo "Poll #${POLL} elapsed=${ELAPSED}s ..."
-
-            set +e
-            OUT=$(TESTING_FARM_API_URL="${API_URL}" testing-farm list \
-                  --id "${REQ_ID}" --format json 2>&1)
-            LIST_RC=$?
-            set -e
-            if [[ ${LIST_RC} -ne 0 ]]; then
-              echo "Warning: testing-farm list failed, retrying..."; sleep 30; continue
-            fi
-
-            STATE=$(echo "${OUT}" | jq -r '.[0].state // empty')
-            RESULT=$(echo "${OUT}" | jq -r '.[0].result.overall // empty')
-            echo "  state=${STATE:-?} result=${RESULT:-?}"
-
-            if [[ "${STATE}" =~ ^(complete|error|canceled)$ ]]; then
-              API_ARTS=$(echo "${OUT}" | jq -r '.[0].run.artifacts // empty')
-              [[ -n "${API_ARTS}" && "${API_ARTS}" != "null" ]] && ARTIFACTS_URL="${API_ARTS}"
-              echo "artifacts_url=${ARTIFACTS_URL}" >> "${GITHUB_OUTPUT}"
-
-              trap - EXIT; REQ_ID=""
-              [[ "${STATE}" == "complete" && "${RESULT}" == "passed" ]] && exit 0 || exit 1
-            fi
-
-            if (( $(date +%s) > DEADLINE )); then
-              echo "TIMEOUT after ${TIMEOUT_MIN} minutes"; exit 1
-            fi
-            sleep 30
-          done
-
-      - name: Collect artifact from TF arm64 (fallback)
-        id: tf-artifact
-        if: steps.cache.outputs.found != 'true' && success()
-        env:
-          ARTIFACTS_URL: ${{ steps.tf.outputs.artifacts_url }}
-          SOURCE_REF: ${{ github.sha }}
-        run: |
-          set -euo pipefail
-          ARTIFACT="envoy-alpha-${SOURCE_REF}-arm64.tar.gz"
-          echo "Fetching results.xml to locate artifact URL..."
-          curl -fSL -o results.xml "${ARTIFACTS_URL}/results.xml"
-          TF_PATH=$(grep -oP 'href="\K[^"]+'"${ARTIFACT}"'[^"]*' results.xml | head -1)
-          [[ -z "${TF_PATH}" ]] && { echo "ERROR: ${ARTIFACT} not found in results.xml"; cat results.xml; exit 1; }
-          echo "Downloading: ${TF_PATH}"
-          curl -fSL -o "${ARTIFACT}" "${TF_PATH}"
-          echo "Downloaded: ${ARTIFACT} ($(du -sh "${ARTIFACT}" | cut -f1))"
-          echo "artifact_name=${ARTIFACT}" >> "${GITHUB_OUTPUT}"
-
-      - name: Upload to GCS arm64 (fallback)
         if: steps.cache.outputs.found != 'true' && success()
         env:
           GCS_SERVICE_ACCOUNT_KEY: ${{ secrets.GCS_SERVICE_ACCOUNT_KEY }}
