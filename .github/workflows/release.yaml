@@ -47,30 +47,28 @@ jobs:
             PR_HEAD_SHA="${INPUT_PR_HEAD_SHA}"
             echo "Using manually provided PR HEAD SHA: ${PR_HEAD_SHA}"
           else
-            # push event: extract PR HEAD SHA from merge commit parents
-            PR_HEAD_SHA=$(gh api "repos/${GITHUB_REPOSITORY}/commits/${GITHUB_SHA}" \
-              --jq '.parents[1].sha // empty')
-            if [[ -z "${PR_HEAD_SHA}" ]]; then
-              echo "Could not determine PR HEAD SHA (not a merge commit — use pr_head_sha input for manual runs)"
-              echo "found=false" >> "${GITHUB_OUTPUT}"
-              exit 0
-            fi
+            # push event: determine PR HEAD SHA from commit parents
+            COMMIT_DATA=$(gh api "repos/${GITHUB_REPOSITORY}/commits/${GITHUB_SHA}")
+            PR_HEAD_SHA=$(echo "${COMMIT_DATA}" | jq -r '.parents[1].sha // empty')
 
-            # Verify the PR branch was up-to-date with the base at merge time.
-            # parents[0] is the base branch tip before the merge.
-            BASE_BEFORE_MERGE=$(gh api "repos/${GITHUB_REPOSITORY}/commits/${GITHUB_SHA}" \
-              --jq '.parents[0].sha // empty')
-
-            COMPARE_STATUS=$(gh api \
-              "repos/${GITHUB_REPOSITORY}/compare/${BASE_BEFORE_MERGE}...${PR_HEAD_SHA}" \
-              --jq '.status')
-
-            echo "Compare ${BASE_BEFORE_MERGE:0:8}...${PR_HEAD_SHA:0:8}: ${COMPARE_STATUS}"
-
-            if [[ "${COMPARE_STATUS}" != "ahead" && "${COMPARE_STATUS}" != "identical" ]]; then
-              echo "PR branch was not up-to-date with base (compare: ${COMPARE_STATUS}) — must rebuild from merge commit"
-              echo "found=false" >> "${GITHUB_OUTPUT}"
-              exit 0
+            if [[ -n "${PR_HEAD_SHA}" ]]; then
+              # Standard merge commit: verify the PR branch was up-to-date with the base at merge time.
+              # parents[0] is the base branch tip before the merge.
+              BASE_BEFORE_MERGE=$(echo "${COMMIT_DATA}" | jq -r '.parents[0].sha // empty')
+              COMPARE_STATUS=$(gh api \
+                "repos/${GITHUB_REPOSITORY}/compare/${BASE_BEFORE_MERGE}...${PR_HEAD_SHA}" \
+                --jq '.status')
+              echo "Compare ${BASE_BEFORE_MERGE:0:8}...${PR_HEAD_SHA:0:8}: ${COMPARE_STATUS}"
+              if [[ "${COMPARE_STATUS}" != "ahead" && "${COMPARE_STATUS}" != "identical" ]]; then
+                echo "PR branch was not up-to-date with base (compare: ${COMPARE_STATUS}), must rebuild from merge commit"
+                echo "found=false" >> "${GITHUB_OUTPUT}"
+                exit 0
+              fi
+            else
+              # Fast-forward or squash merge: GITHUB_SHA may be the PR commit itself.
+              # Use it and let the artifact lookup below determine if a pre-built artifact exists.
+              PR_HEAD_SHA="${GITHUB_SHA}"
+              echo "No merge commit detected (fast-forward or squash), trying SHA: ${PR_HEAD_SHA}"
             fi
           fi
 
@@ -290,29 +288,28 @@ jobs:
             PR_HEAD_SHA="${INPUT_PR_HEAD_SHA}"
             echo "Using manually provided PR HEAD SHA: ${PR_HEAD_SHA}"
           else
-            PR_HEAD_SHA=$(gh api "repos/${GITHUB_REPOSITORY}/commits/${GITHUB_SHA}" \
-              --jq '.parents[1].sha // empty')
-            if [[ -z "${PR_HEAD_SHA}" ]]; then
-              echo "Could not determine PR HEAD SHA (not a merge commit — use pr_head_sha input for manual runs)"
-              echo "found=false" >> "${GITHUB_OUTPUT}"
-              exit 0
-            fi
+            # push event: determine PR HEAD SHA from commit parents
+            COMMIT_DATA=$(gh api "repos/${GITHUB_REPOSITORY}/commits/${GITHUB_SHA}")
+            PR_HEAD_SHA=$(echo "${COMMIT_DATA}" | jq -r '.parents[1].sha // empty')
 
-            # Verify the PR branch was up-to-date with the base at merge time.
-            # parents[0] is the base branch tip before the merge.
-            BASE_BEFORE_MERGE=$(gh api "repos/${GITHUB_REPOSITORY}/commits/${GITHUB_SHA}" \
-              --jq '.parents[0].sha // empty')
-
-            COMPARE_STATUS=$(gh api \
-              "repos/${GITHUB_REPOSITORY}/compare/${BASE_BEFORE_MERGE}...${PR_HEAD_SHA}" \
-              --jq '.status')
-
-            echo "Compare ${BASE_BEFORE_MERGE:0:8}...${PR_HEAD_SHA:0:8}: ${COMPARE_STATUS}"
-
-            if [[ "${COMPARE_STATUS}" != "ahead" && "${COMPARE_STATUS}" != "identical" ]]; then
-              echo "PR branch was not up-to-date with base (compare: ${COMPARE_STATUS}) — must rebuild from merge commit"
-              echo "found=false" >> "${GITHUB_OUTPUT}"
-              exit 0
+            if [[ -n "${PR_HEAD_SHA}" ]]; then
+              # Standard merge commit: verify the PR branch was up-to-date with the base at merge time.
+              # parents[0] is the base branch tip before the merge.
+              BASE_BEFORE_MERGE=$(echo "${COMMIT_DATA}" | jq -r '.parents[0].sha // empty')
+              COMPARE_STATUS=$(gh api \
+                "repos/${GITHUB_REPOSITORY}/compare/${BASE_BEFORE_MERGE}...${PR_HEAD_SHA}" \
+                --jq '.status')
+              echo "Compare ${BASE_BEFORE_MERGE:0:8}...${PR_HEAD_SHA:0:8}: ${COMPARE_STATUS}"
+              if [[ "${COMPARE_STATUS}" != "ahead" && "${COMPARE_STATUS}" != "identical" ]]; then
+                echo "PR branch was not up-to-date with base (compare: ${COMPARE_STATUS}), must rebuild from merge commit"
+                echo "found=false" >> "${GITHUB_OUTPUT}"
+                exit 0
+              fi
+            else
+              # Fast-forward or squash merge: GITHUB_SHA may be the PR commit itself.
+              # Use it and let the artifact lookup below determine if a pre-built artifact exists.
+              PR_HEAD_SHA="${GITHUB_SHA}"
+              echo "No merge commit detected (fast-forward or squash), trying SHA: ${PR_HEAD_SHA}"
             fi
           fi
 
