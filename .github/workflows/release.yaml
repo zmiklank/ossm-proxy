@@ -2,7 +2,7 @@
 name: Release artifact (post-merge)
 
 # Equivalent to Prow's postsubmit jobs: copy-artifacts-gcs and copy-artifacts-gcs-arm.
-# Triggered when a PR is merged to release-1.28.
+# Triggered when a PR is merged.
 # Produces envoy-alpha-{SHA}.tar.gz and envoy-alpha-{SHA}-arm64.tar.gz in GCS.
 #
 # Fast path: if the pre-submit (build.yaml) already built and cached the artifact as
@@ -14,6 +14,7 @@ on:
   push:
     branches:
       - release-1.28
+      - release-1.30
   workflow_dispatch:
     inputs:
       pr_head_sha:
