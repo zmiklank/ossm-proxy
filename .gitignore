@@ -14,3 +14,4 @@ test/envoye2e/http_metadata_exchange/testoutput
 .vscode
 out/
 .cache
+ossm/vendor

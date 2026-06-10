@@ -121,124 +121,31 @@ jobs:
             ARTIFACT_NAME="${MERGE_ARTIFACT}"
             echo "Renamed to merge commit SHA: ${ARTIFACT_NAME}"
           fi
-          if [[ "${DRY_RUN}" == "true" ]]; then
-            echo "DRY RUN: would upload ${ARTIFACT_NAME} to gs://maistra-prow-testing/proxy/"
-            echo "Artifact size: $(du -sh "${ARTIFACT_NAME}" | cut -f1)"
-            exit 0
-          fi
-          echo "${GCS_SERVICE_ACCOUNT_KEY}" > /tmp/gcs-key.json
-          pip install --quiet google-cloud-storage
-          python3 - <<'EOF'
-          import os
-          from google.cloud import storage
-
-          client = storage.Client.from_service_account_json('/tmp/gcs-key.json')
-          bucket = client.bucket('maistra-prow-testing')
-          artifact = os.environ['ARTIFACT_NAME']
-          blob = bucket.blob(f'proxy/{artifact}')
-          blob.upload_from_filename(artifact)
-          url = f'https://storage.googleapis.com/maistra-prow-testing/proxy/{artifact}'
-          print(f'Uploaded: {url}')
-          EOF
-          rm -f /tmp/gcs-key.json
+          bash .github/scripts/upload-to-gcs.sh "${ARTIFACT_NAME}"
 
       # --- Fallback path: rebuild via Testing Farm ---
-
-      - name: Install Testing Farm CLI (fallback)
-        if: steps.cache.outputs.found != 'true'
-        run: pip install --quiet tft-cli
 
       - name: Build release artifact on Testing Farm (fallback)
         id: tf
         if: steps.cache.outputs.found != 'true'
-        env:
-          TESTING_FARM_API_TOKEN: ${{ secrets.TESTING_FARM_PUBLIC_API_TOKEN }}
-          GH_TOKEN: ${{ github.token }}
-          GIT_REF: ${{ github.ref_name }}
-          SOURCE_REPO: ${{ format('{0}/{1}.git', github.server_url, github.repository) }}
-          SOURCE_REF: ${{ github.sha }}
-          ARCH: ${{ matrix.arch }}
-        run: |
-          #!/usr/bin/env bash
-          set -euo pipefail
-
-          API_URL="https://api.testing-farm.io/v0.1"
-          TIMEOUT_MIN=120
-
-          REQ_ID=""
-          tf_cancel() {
-            [[ -n "${REQ_ID}" ]] && \
-              TESTING_FARM_API_URL="${API_URL}" testing-farm cancel "${REQ_ID}" 2>/dev/null || true
-          }
-          trap tf_cancel EXIT
-
-          echo "Submitting TF release request (arch: ${ARCH})..."
-          set +e
-          REQ_OUTPUT=$(TESTING_FARM_API_URL="${API_URL}" testing-farm request \
-            --compose "CentOS-Stream-10" \
-            --arch "${ARCH}" \
-            --hardware "virtualization.is-virtualized=false" \
-            --git-url "https://github.com/openshift-service-mesh/proxy.git" \
-            --git-ref "${GIT_REF}" \
-            --plan "/plans/release" \
-            --environment "SOURCE_REPO=${SOURCE_REPO}" \
-            --environment "SOURCE_REF=${SOURCE_REF}" \
-            --timeout "${TIMEOUT_MIN}" \
-            --no-wait 2>&1)
-          TF_RC=$?
-          set -e
-          echo "${REQ_OUTPUT}"
-          [[ ${TF_RC} -ne 0 ]] && { echo "ERROR: testing-farm request failed (exit ${TF_RC})"; exit ${TF_RC}; }
-
-          REQ_ID=$(echo "${REQ_OUTPUT}" | grep -oP 'requests/\K[a-f0-9-]+' | head -1 || true)
-          [[ -z "${REQ_ID}" ]] && { echo "ERROR: Could not extract request ID"; exit 1; }
-
-          ARTIFACTS_URL="https://artifacts.dev.testing-farm.io/${REQ_ID}"
-          echo "request_id=${REQ_ID}"          >> "${GITHUB_OUTPUT}"
-          echo "artifacts_url=${ARTIFACTS_URL}" >> "${GITHUB_OUTPUT}"
-          echo "Request ID: ${REQ_ID}"
-          echo "Artifacts:  ${ARTIFACTS_URL}"
-
-          DEADLINE=$(( $(date +%s) + TIMEOUT_MIN * 60 ))
-          POLL=0
-          while true; do
-            POLL=$(( POLL + 1 ))
-            ELAPSED=$(( $(date +%s) - (DEADLINE - TIMEOUT_MIN * 60) ))
-            echo "Poll #${POLL} elapsed=${ELAPSED}s ..."
-
-            set +e
-            OUT=$(TESTING_FARM_API_URL="${API_URL}" testing-farm list \
-                  --id "${REQ_ID}" --format json 2>&1)
-            LIST_RC=$?
-            set -e
-            if [[ ${LIST_RC} -ne 0 ]]; then
-              echo "Warning: testing-farm list failed, retrying..."; sleep 30; continue
-            fi
-
-            STATE=$(echo "${OUT}" | jq -r '.[0].state // empty')
-            RESULT=$(echo "${OUT}" | jq -r '.[0].result.overall // empty')
-            echo "  state=${STATE:-?} result=${RESULT:-?}"
-
-            if [[ "${STATE}" =~ ^(complete|error|canceled)$ ]]; then
-              API_ARTS=$(echo "${OUT}" | jq -r '.[0].run.artifacts // empty')
-              [[ -n "${API_ARTS}" && "${API_ARTS}" != "null" ]] && ARTIFACTS_URL="${API_ARTS}"
-              echo "artifacts_url=${ARTIFACTS_URL}" >> "${GITHUB_OUTPUT}"
-
-              trap - EXIT; REQ_ID=""
-              [[ "${STATE}" == "complete" && "${RESULT}" == "passed" ]] && exit 0 || exit 1
-            fi
-
-            if (( $(date +%s) > DEADLINE )); then
-              echo "TIMEOUT after ${TIMEOUT_MIN} minutes"; exit 1
-            fi
-            sleep 30
-          done
+        uses: sclorg/testing-farm-as-github-action@v4
+        with:
+          api_key: ${{ secrets.TESTING_FARM_PUBLIC_API_TOKEN }}
+          api_url: https://api.testing-farm.io/v0.1
+          git_url: https://github.com/openshift-service-mesh/proxy.git
+          git_ref: ${{ github.ref_name }}
+          tmt_plan_regex: /plans/release
+          compose: CentOS-Stream-10
+          arch: ${{ matrix.arch }}
+          tmt_hardware: '{"virtualization": {"is-virtualized": false}}'
+          variables: "SOURCE_REPO=${{ format('{0}/{1}.git', github.server_url, github.repository) }};SOURCE_REF=${{ github.sha }}"
+          timeout: 120
 
       - name: Collect artifact from TF (fallback)
         id: tf-artifact
         if: steps.cache.outputs.found != 'true' && success()
         env:
-          ARTIFACTS_URL: ${{ steps.tf.outputs.artifacts_url }}
+          ARTIFACTS_URL: https://artifacts.dev.testing-farm.io/${{ steps.tf.outputs.request_id }}
           SOURCE_REF: ${{ github.sha }}
           ARTIFACT_SUFFIX: ${{ matrix.suffix }}
         run: |
@@ -259,25 +166,4 @@ jobs:
           GCS_SERVICE_ACCOUNT_KEY: ${{ secrets.GCS_SERVICE_ACCOUNT_KEY }}
           ARTIFACT_NAME: ${{ steps.tf-artifact.outputs.artifact_name }}
           DRY_RUN: ${{ github.event.inputs.dry_run || 'false' }}
-        run: |
-          set -euo pipefail
-          if [[ "${DRY_RUN}" == "true" ]]; then
-            echo "DRY RUN: would upload ${ARTIFACT_NAME} to gs://maistra-prow-testing/proxy/"
-            echo "Artifact size: $(du -sh "${ARTIFACT_NAME}" | cut -f1)"
-            exit 0
-          fi
-          echo "${GCS_SERVICE_ACCOUNT_KEY}" > /tmp/gcs-key.json
-          pip install --quiet google-cloud-storage
-          python3 - <<'EOF'
-          import os
-          from google.cloud import storage
-
-          client = storage.Client.from_service_account_json('/tmp/gcs-key.json')
-          bucket = client.bucket('maistra-prow-testing')
-          artifact = os.environ['ARTIFACT_NAME']
-          blob = bucket.blob(f'proxy/{artifact}')
-          blob.upload_from_filename(artifact)
-          url = f'https://storage.googleapis.com/maistra-prow-testing/proxy/{artifact}'
-          print(f'Uploaded: {url}')
-          EOF
-          rm -f /tmp/gcs-key.json
+        run: bash .github/scripts/upload-to-gcs.sh "${ARTIFACT_NAME}"

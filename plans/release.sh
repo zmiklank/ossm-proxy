@@ -24,7 +24,7 @@ podman run -d --name "${CNAME}" --privileged \
   -e LOCAL_CPU_RESOURCES="$(nproc)" \
   -e LOCAL_RAM_RESOURCES="${LOCAL_RAM}" \
   -v "$(pwd)":/work:z -w /work \
-  quay.io/maistra-dev/maistra-builder:3.3 \
+  $(cat ossm/ci/builder-image) \
   sleep infinity
 
 TMPLOG=$(mktemp)
@@ -48,34 +48,7 @@ if [[ ${EXIT_CODE} -eq 0 ]]; then
   echo "=== Build output — last 300 lines ==="
   tail -300 "${TMPLOG}"
   echo "Artifact built: ${ARTIFACT} ($(du -sh "${ARTIFACT}" | cut -f1))"
-
-  # Upload to GCS directly from the TF machine (which has internet access to GCS).
-  # GCS_KEY_JSON_B64 is the base64-encoded service account JSON, passed as a TF secret.
-  if [[ -n "${GCS_KEY_JSON_B64:-}" ]]; then
-    echo "=== Uploading to GCS ==="
-    echo "${GCS_KEY_JSON_B64}" | base64 -d > /tmp/gcs-key.json
-    pip3 install --quiet google-cloud-storage
-    python3 - <<EOF
-import os
-from google.cloud import storage
-
-client = storage.Client.from_service_account_json('/tmp/gcs-key.json')
-bucket = client.bucket('maistra-prow-testing')
-artifact = '${ARTIFACT}'
-blob = bucket.blob(f'proxy/{artifact}')
-blob.upload_from_filename(artifact)
-url = f'https://storage.googleapis.com/maistra-prow-testing/proxy/{artifact}'
-print(f'Uploaded: {url}')
-EOF
-    rm -f /tmp/gcs-key.json
-    GCS_URL="https://storage.googleapis.com/maistra-prow-testing/proxy/${ARTIFACT}"
-    echo "GCS_URL=${GCS_URL}" > "${TMT_TEST_DATA}/artifact.env"
-    echo "Release artifact published: ${GCS_URL}"
-  else
-    echo "GCS_KEY_JSON_B64 not set — skipping GCS upload (dry run or credentials not configured)"
-    echo "Artifact available at TF artifacts storage (RH internal network only)"
-    cp "${ARTIFACT}" "${TMT_TEST_DATA}/${ARTIFACT}"
-  fi
+  cp "${ARTIFACT}" "${TMT_TEST_DATA}/${ARTIFACT}"
 
 else
   echo "=== Build FAILED — full output ==="

@@ -21,7 +21,7 @@ podman run -d --name "${CNAME}" --privileged \
   -e LOCAL_CPU_RESOURCES="$(nproc)" \
   -e LOCAL_RAM_RESOURCES="${LOCAL_RAM}" \
   -v "$(pwd)":/work:z -w /work \
-  quay.io/maistra-dev/maistra-builder:3.3 \
+  $(cat ossm/ci/builder-image) \
   sleep infinity
 
 TMPLOG=$(mktemp)
