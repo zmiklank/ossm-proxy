@@ -42,6 +42,8 @@ jobs:
           - arch: aarch64
             suffix: "-arm64"
     steps:
+      - uses: actions/checkout@v4
+
       - name: Find pre-submit artifact (fast path)
         id: cache
         env:
