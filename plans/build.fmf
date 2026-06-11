@@ -1,4 +1,6 @@
 summary: Build openshift-service-mesh proxy on bare metal
+test: bash build.sh
+duration: 3h
 
 prepare:
   - name: Install dependencies

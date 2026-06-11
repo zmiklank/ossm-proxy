@@ -7,6 +7,9 @@ source "$(dirname "${BASH_SOURCE[0]}")/common.sh"
 TMPLOG=$(mktemp)
 
 echo "=== Building release artifact (envoy_tar) ==="
+# SKIP_GCS_UPLOAD=true: build-only run inside TF, no GCS upload from the VM.
+# The artifact is placed in TMT_TEST_DATA for TF archiving.
+# GCS upload is handled by release.yaml on the GHA runner via upload-to-gcs.sh.
 podman exec --workdir /work "${CNAME}" \
   bash -c 'SKIP_GCS_UPLOAD=true bash ossm/ci/post-submit.sh' > "${TMPLOG}" 2>&1
 EXIT_CODE=$?
