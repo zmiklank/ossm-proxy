@@ -30,9 +30,13 @@ jobs:
         git config user.email "openshiftservicemeshbot@gmail.com"
         git remote add upstream https://github.com/istio/proxy.git
         git fetch upstream ${{ matrix.branch }}
-        git merge upstream/${{ matrix.branch }}
+        if git merge upstream/${{ matrix.branch }} | grep -q "Already up to date"; then
+          echo "already-synced=true" >> "$GITHUB_OUTPUT"
+        fi
+      id: merge
 
     - name: Update deps
+      if: steps.merge.outputs.already-synced != 'true'
       run: |
         ./ossm/scripts/update-deps.sh
         # Reset the changes to compiler.bzl since we don't want to update it
@@ -41,6 +45,7 @@ jobs:
         git commit -m "Update deps" || true
 
     - name: Create the PR
+      if: steps.merge.outputs.already-synced != 'true'
       uses: peter-evans/create-pull-request@v8
       with:
         token: ${{ secrets.GIT_TOKEN }}
