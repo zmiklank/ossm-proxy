@@ -19,7 +19,7 @@ jobs:
         branch: [release-1.24, release-1.26, release-1.27, release-1.28]
 
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v5
       with:
         ref: ${{matrix.branch}}
 
@@ -27,7 +27,7 @@ jobs:
       run: make ossm-update-everything
 
     - name: Create the PR
-      uses: peter-evans/create-pull-request@v7
+      uses: peter-evans/create-pull-request@v8
       with:
         token: ${{ secrets.GIT_TOKEN }}
         branch: update-envoy-${{matrix.branch}}
