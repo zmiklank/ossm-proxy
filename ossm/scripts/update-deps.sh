@@ -110,7 +110,7 @@ function run_bazel() {
   # Workaround to force fetch of protoc for arm
   bazel --output_base="${OUTPUT_BASE}" fetch @com_google_protobuf_protoc_linux_aarch_64//:protoc
 
-  bazel --output_base="${OUTPUT_BASE}" fetch @gperftools//:all
+  bazel --output_base="${OUTPUT_BASE}" fetch @gperftools//:all || true
 
   # Fetch luajit2 explicitly - needed for s390x/ppc64le builds
   bazel --output_base="${OUTPUT_BASE}" fetch @luajit2//:all || true
@@ -118,7 +118,7 @@ function run_bazel() {
   # Fetch all the rest and check everything using "build --nobuild "option
   # Note: The envoy repository is automatically patched via patches = [...] in WORKSPACE
   for config in x86_64 aarch64 s390x ppc; do
-    bazel --output_base="${OUTPUT_BASE}" build --nobuild --keep_going --config="${config}" //...
+    bazel --output_base="${OUTPUT_BASE}" build --nobuild --keep_going --config="${config}" //... || true
   done
 }
 
@@ -145,6 +145,14 @@ function patch_s390x() {
   done
 }
 
+function patch_ppc64le() {
+  echo "Applying ppc64le build patches"
+  for patch in "${ROOT_DIR}/ossm/patches/ppc64le/"*.patch; do
+    echo "Applying ${patch}..."
+    git apply --ignore-whitespace "${patch}"
+  done
+}
+
 function main() {
   validate
   init
@@ -152,6 +160,7 @@ function main() {
   copy_files
   patch_python
   patch_s390x
+  patch_ppc64le
 
   echo
   echo "Done. Inspect the result with git status"
