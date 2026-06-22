@@ -1,0 +1,105 @@
+---
+name: Proxy build (Testing Farm)
+
+on:
+  workflow_dispatch:
+  pull_request_target:
+    types: [opened, synchronize, reopened, labeled]
+    branches:
+      - release-1.28
+      - release-1.30
+
+jobs:
+  remove-label:
+    runs-on: ubuntu-latest
+    if: github.event.action == 'synchronize'
+    permissions:
+      pull-requests: write
+    steps:
+      - uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.issues.removeLabel({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.payload.pull_request.number,
+              name: 'ok-to-test'
+            }).catch(() => {} )
+
+  build:
+    runs-on: ubuntu-latest
+    # run either because the author is in the VIP list or
+    # because someone added the ok-to-test label
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      (
+        github.event.action != 'labeled' &&
+        (
+          github.event.pull_request.author_association == 'OWNER' ||
+          github.event.pull_request.author_association == 'MEMBER' ||
+          github.event.pull_request.author_association == 'COLLABORATOR'
+        )
+      ) ||
+      (
+        github.event.action == 'labeled' &&
+        github.event.label.name == 'ok-to-test'
+      )
+    permissions:
+      statuses: write
+      pull-requests: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            suffix: ""
+            status_name: Testing Farm bare metal
+          - arch: aarch64
+            suffix: "-arm64"
+            status_name: Testing Farm bare metal arm64
+    steps:
+      - name: Run build on Testing Farm bare metal
+        id: tf
+        uses: sclorg/testing-farm-as-github-action@v4
+        with:
+          api_key: ${{ secrets.TESTING_FARM_PUBLIC_API_TOKEN }}
+          api_url: https://api.testing-farm.io/v0.1
+          git_url: https://github.com/openshift-service-mesh/proxy.git
+          git_ref: ${{ github.base_ref || github.ref_name }}
+          tmt_plan_regex: /plans/build
+          compose: CentOS-Stream-10
+          arch: ${{ matrix.arch }}
+          tmt_hardware: '{"virtualization": {"is-virtualized": false}}'
+          variables: "SOURCE_REPO=${{ github.event.pull_request.head.repo.clone_url || format('{0}/{1}.git', github.server_url, github.repository) }};SOURCE_REF=${{ github.event.pull_request.head.sha || github.sha }}"
+          timeout: 120
+          update_pull_request_status: true
+          pull_request_status_name: ${{ matrix.status_name }}
+          create_issue_comment: true
+          commit_sha: ${{ github.event.pull_request.head.sha || github.sha }}
+          pr_number: ${{ github.event.pull_request.number || '' }}
+
+      - name: Collect build artifact
+        if: success()
+        env:
+          REQUEST_ID: ${{ steps.tf.outputs.request_id }}
+          SOURCE_REF: ${{ github.event.pull_request.head.sha || github.sha }}
+          SUFFIX: ${{ matrix.suffix }}
+        run: |
+          ARTIFACTS_URL="https://artifacts.dev.testing-farm.io/${REQUEST_ID}"
+          ARTIFACT="envoy-alpha-${SOURCE_REF}${SUFFIX}.tar.gz"
+          echo "Fetching results.xml to locate artifact URL..."
+          curl -fSL -o results.xml "${ARTIFACTS_URL}/results.xml"
+          TF_PATH=$(grep -oP 'href="\K[^"]+'"${ARTIFACT}"'[^"]*' results.xml | head -1)
+          [[ -z "${TF_PATH}" ]] && { echo "ERROR: ${ARTIFACT} not found in results.xml"; cat results.xml; exit 1; }
+          echo "Downloading: ${TF_PATH}"
+          curl -fSL -o "${ARTIFACT}" "${TF_PATH}"
+          echo "Downloaded: ${ARTIFACT} ($(du -sh "${ARTIFACT}" | cut -f1))"
+
+      - name: Upload build artifact
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: envoy-alpha-${{ github.event.pull_request.head.sha || github.sha }}${{ matrix.suffix }}
+          path: envoy-alpha-${{ github.event.pull_request.head.sha || github.sha }}${{ matrix.suffix }}.tar.gz
+          retention-days: 7
+
