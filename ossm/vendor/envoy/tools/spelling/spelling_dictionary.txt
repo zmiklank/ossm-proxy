@@ -4,6 +4,7 @@
 # are allowed for any otherwise correctly spelled word.
 
 Allshard
+FCS
 FLUSHALL
 NUMPAT
 PUBSUB
@@ -63,6 +64,8 @@ BPF
 Bdecoded
 Bencoded
 CIO
+CBC
+cbc
 cbegin
 cend
 constness
@@ -709,6 +712,7 @@ ci
 ciphersuite
 ciphersuites
 ciphertext
+ciphertexts
 circllhist
 clientcert
 cloneable
@@ -754,6 +758,7 @@ ctad
 ctor
 ctrl
 customizations
+cutover
 darwin
 datadog
 datagram

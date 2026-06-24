@@ -73,8 +73,8 @@ REPOSITORY_LOCATIONS_SPEC = dict(
         urls = ["https://github.com/aws/aws-lc/archive/v{version}.tar.gz"],
     ),
     openssl = dict(
-        version = "3.5.6",
-        sha256 = "deae7c80cba99c4b4f940ecadb3c3338b13cb77418409238e57d7f31f2a3b736",
+        version = "3.5.7",
+        sha256 = "a8c0d28a529ca480f9f36cf5792e2cd21984552a3c8e4aa11a24aa31aeac98e8",
         strip_prefix = "openssl-{version}",
         urls = ["https://github.com/openssl/openssl/releases/download/openssl-{version}/openssl-{version}.tar.gz"],
     ),
@@ -510,8 +510,8 @@ REPOSITORY_LOCATIONS_SPEC = dict(
         urls = ["https://github.com/bytecodealliance/wasm-micro-runtime/archive/{version}.tar.gz"],
     ),
     wasmtime = dict(
-        version = "24.0.7",
-        sha256 = "2cf72451e5031d8072623c4c3003699ee65ccc94edfab1d8b664744a8c611d4f",
+        version = "24.0.9",
+        sha256 = "2185c520f495e299770b12273fbe8aefc99c95687db9e015ce33ca43212898fd",
         strip_prefix = "wasmtime-{version}",
         urls = ["https://github.com/bytecodealliance/wasmtime/archive/v{version}.tar.gz"],
     ),
